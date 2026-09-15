@@ -20,6 +20,12 @@ import { OrdersListPage } from './pages/orders/OrdersList';
 import { NewOrderPage } from './pages/orders/NewOrder';
 import { OrderDetailPage } from './pages/orders/OrderDetail';
 import { ConsolidationPage } from './pages/consolidation/Consolidation';
+import { PurchaseRequirementPage } from './pages/purchase/PurchaseRequirement';
+import { PurchaseEntryPage } from './pages/purchase/PurchaseEntry';
+import { ReceivingPage } from './pages/receiving/Receiving';
+import { QualityCheckPage } from './pages/receiving/QualityCheck';
+import { AllocationPage } from './pages/allocation/Allocation';
+import { ShortageExcessPage } from './pages/allocation/ShortageExcess';
 import { PortalHomePage } from './pages/portal/PortalHome';
 import { PlaceOrderPage } from './pages/portal/PlaceOrder';
 import { PortalOrdersPage } from './pages/portal/PortalOrders';
@@ -55,6 +61,7 @@ PLACEHOLDER_PATHS.delete('/'); // dashboard is real
 [
   '/customers', '/customers/new', '/customers/:id', '/items', '/items/new', '/items/:id', '/categories', '/prices', '/stock',
   '/orders', '/orders/new', '/orders/:id', '/consolidation', '/portal/order',
+  '/purchase', '/purchase/new', '/receiving', '/receiving/new', '/quality-check', '/allocation', '/shortage',
 ].forEach((p) => PLACEHOLDER_PATHS.delete(p));
 
 export default function App() {
@@ -85,6 +92,14 @@ export default function App() {
               <Route path="/orders/new" element={<RequireModule module="orders" action="create"><NewOrderPage /></RequireModule>} />
               <Route path="/orders/:id" element={<RequireModule module="orders"><OrderDetailPage /></RequireModule>} />
               <Route path="/consolidation" element={<RequireModule module="consolidation"><ConsolidationPage /></RequireModule>} />
+
+              <Route path="/purchase" element={<RequireModule module="purchase"><PurchaseRequirementPage /></RequireModule>} />
+              <Route path="/purchase/new" element={<RequireModule module="purchase" action="create"><PurchaseEntryPage /></RequireModule>} />
+              <Route path="/receiving" element={<RequireModule module="receiving"><ReceivingPage /></RequireModule>} />
+              <Route path="/receiving/new" element={<RequireModule module="receiving" action="create"><ReceivingPage /></RequireModule>} />
+              <Route path="/quality-check" element={<RequireModule module="receiving"><QualityCheckPage /></RequireModule>} />
+              <Route path="/allocation" element={<RequireModule module="allocation"><AllocationPage /></RequireModule>} />
+              <Route path="/shortage" element={<RequireModule module="allocation"><ShortageExcessPage /></RequireModule>} />
               {[...PLACEHOLDER_PATHS.entries()].map(([path, meta]) => (
                 <Route
                   key={path}
