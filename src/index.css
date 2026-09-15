@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+
+  /* Primary — deep produce green */
+  --color-brand-50: #eef6f1;
+  --color-brand-100: #d6eadd;
+  --color-brand-200: #afd6bd;
+  --color-brand-300: #7fba95;
+  --color-brand-400: #4f9b6d;
+  --color-brand-500: #2f7f50;
+  --color-brand-600: #22683f;
+  --color-brand-700: #1b5433;
+  --color-brand-800: #16432a;
+  --color-brand-900: #113522;
+  --color-brand-950: #0a2215;
+
+  /* Accent — fresh leaf green */
+  --color-fresh-50: #effaf0;
+  --color-fresh-100: #daf3dd;
+  --color-fresh-200: #b5e6bb;
+  --color-fresh-300: #86d391;
+  --color-fresh-400: #5cbf6a;
+  --color-fresh-500: #3aa64b;
+  --color-fresh-600: #2c873a;
+
+  /* Neutrals with a faint green cast */
+  --color-canvas: #f4f6f4;
+  --color-line: #e3e8e4;
+  --color-ink: #1c2620;
+  --color-muted: #5f6d64;
+  --color-subtle: #8a968e;
+
+  --radius-card: 12px;
+  --shadow-card: 0 1px 2px rgb(16 40 26 / 0.05), 0 1px 1px rgb(16 40 26 / 0.03);
+  --shadow-pop: 0 10px 30px -8px rgb(16 40 26 / 0.22), 0 2px 6px rgb(16 40 26 / 0.08);
+
+  --animate-fade-in: fade-in 0.14s ease-out;
+  --animate-slide-in: slide-in 0.18s ease-out;
+  --animate-slide-up: slide-up 0.18s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slide-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-size: 14px;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  .tabular { font-variant-numeric: tabular-nums; }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type='number'] { -moz-appearance: textfield; }
+  :focus-visible { outline: 2px solid var(--color-brand-400); outline-offset: 1px; }
+}
+
+@layer utilities {
+  .scrollbar-thin { scrollbar-width: thin; scrollbar-color: #c9d3cc transparent; }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* Print: strip the application shell, keep the document. */
+@media print {
+  @page { margin: 12mm; }
+  body { background: #fff; font-size: 11px; }
+  .no-print { display: none !important; }
+  .print-area { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
+}

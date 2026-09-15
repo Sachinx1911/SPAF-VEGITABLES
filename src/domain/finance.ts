@@ -1,0 +1,69 @@
+import type { Database, Invoice, InvoiceStatus } from '../types/models';
+import { daysBetween } from '../lib/format';
+
+export interface InvoiceView extends Invoice {
+  paid: number;
+  balance: number;
+  derivedStatus: InvoiceStatus;
+  daysOverdue: number;
+}
+
+/** Paid/Partially Paid/Overdue are derived from payments — never stored on the invoice. */
+export function invoiceViews(db: Database, today: string): InvoiceView[] {
+  const paidBy = new Map<string, number>();
+  for (const p of db.payments) paidBy.set(p.invoiceId, (paidBy.get(p.invoiceId) ?? 0) + p.amount);
+  return db.invoices.map((inv) => {
+    const paid = Math.min(paidBy.get(inv.id) ?? 0, inv.total);
+    const balance = Math.max(inv.total - paid, 0);
+    const daysOverdue = balance > 0 ? Math.max(daysBetween(inv.dueDate, today), 0) : 0;
+    let derivedStatus: InvoiceStatus = inv.status;
+    if (balance <= 0) derivedStatus = 'Paid';
+    else if (daysOverdue > 0) derivedStatus = 'Overdue';
+    else if (paid > 0) derivedStatus = 'Partially Paid';
+    return { ...inv, paid, balance, derivedStatus, daysOverdue };
+  });
+}
+
+export interface OutstandingSummary {
+  total: number;
+  overdue: number;
+  dueToday: number;
+  dueSoon: number; // next 7 days
+  aging: { label: string; amount: number; count: number }[];
+  customers: number;
+}
+
+export function outstandingSummary(db: Database, today: string): OutstandingSummary {
+  const open = invoiceViews(db, today).filter((i) => i.balance > 0);
+  const buckets = [
+    { label: '0–30 days', min: 0, max: 30 },
+    { label: '31–60 days', min: 31, max: 60 },
+    { label: '61–90 days', min: 61, max: 90 },
+    { label: '90+ days', min: 91, max: Infinity },
+  ];
+  return {
+    total: open.reduce((s, i) => s + i.balance, 0),
+    overdue: open.filter((i) => i.daysOverdue > 0).reduce((s, i) => s + i.balance, 0),
+    dueToday: open.filter((i) => i.dueDate === today).reduce((s, i) => s + i.balance, 0),
+    dueSoon: open
+      .filter((i) => {
+        const d = daysBetween(today, i.dueDate);
+        return d > 0 && d <= 7;
+      })
+      .reduce((s, i) => s + i.balance, 0),
+    aging: buckets.map((b) => {
+      const rows = open.filter((i) => {
+        const age = daysBetween(i.invoiceDate, today);
+        return age >= b.min && age <= b.max;
+      });
+      return { label: b.label, amount: rows.reduce((s, i) => s + i.balance, 0), count: rows.length };
+    }),
+    customers: new Set(open.map((i) => i.customerId)).size,
+  };
+}
+
+export function customerOutstanding(db: Database, today: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const i of invoiceViews(db, today)) if (i.balance > 0) m.set(i.customerId, (m.get(i.customerId) ?? 0) + i.balance);
+  return m;
+}
