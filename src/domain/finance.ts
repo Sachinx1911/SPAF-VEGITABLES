@@ -67,3 +67,37 @@ export function customerOutstanding(db: Database, today: string): Map<string, nu
   for (const i of invoiceViews(db, today)) if (i.balance > 0) m.set(i.customerId, (m.get(i.customerId) ?? 0) + i.balance);
   return m;
 }
+
+export interface LedgerRow {
+  date: string;
+  reference: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+/** Running-balance statement for one customer: every invoice (debit) and payment (credit), oldest first. */
+export function buildLedger(db: Database, customerId: string, from?: string, to?: string): LedgerRow[] {
+  const opening = db.openingBalances.find((o) => o.customerId === customerId)?.amount ?? 0;
+  const openingAt = db.openingBalances.find((o) => o.customerId === customerId)?.asOf ?? '2026-01-01';
+
+  type Entry = { date: string; ref: string; desc: string; debit: number; credit: number };
+  const entries: Entry[] = [];
+  for (const inv of db.invoices.filter((i) => i.customerId === customerId)) {
+    entries.push({ date: inv.invoiceDate, ref: inv.invoiceNo, desc: 'Sales invoice', debit: inv.total, credit: 0 });
+  }
+  for (const p of db.payments.filter((x) => x.customerId === customerId)) {
+    const inv = db.invoices.find((i) => i.id === p.invoiceId);
+    entries.push({ date: p.paymentDate, ref: p.receiptNo, desc: `Payment received${inv ? ` · ${inv.invoiceNo}` : ''} (${p.mode})`, debit: 0, credit: p.amount });
+  }
+  entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  const rows: LedgerRow[] = [{ date: openingAt, reference: 'Opening', description: 'Opening balance', debit: opening > 0 ? opening : 0, credit: opening < 0 ? -opening : 0, balance: opening }];
+  let balance = opening;
+  for (const e of entries) {
+    balance += e.debit - e.credit;
+    rows.push({ date: e.date, reference: e.ref, description: e.desc, debit: e.debit, credit: e.credit, balance });
+  }
+  return rows.filter((r) => (!from || r.date >= from) && (!to || r.date <= to));
+}
