@@ -38,6 +38,18 @@ import { DriverChallansPage } from './pages/driver/DriverChallans';
 import { DriverHistoryPage } from './pages/driver/DriverHistory';
 import { DriverProfilePage } from './pages/driver/DriverProfile';
 import { DeliveryConfirmationPage } from './pages/driver/DeliveryConfirmation';
+import { InvoicesListPage } from './pages/invoices/InvoicesList';
+import { CreateInvoicePage } from './pages/invoices/CreateInvoice';
+import { InvoiceDetailPage } from './pages/invoices/InvoiceDetail';
+import { PaymentsListPage } from './pages/payments/PaymentsList';
+import { OutstandingPage } from './pages/outstanding/Outstanding';
+import { CustomerLedgerPage } from './pages/ledger/CustomerLedger';
+import { OperationsReportsPage, SalesReportsPage, PurchaseReportsPage } from './pages/reports/ReportCenter';
+import { AnalyticsPage } from './pages/analytics/Analytics';
+import { NotificationsPage } from './pages/notifications/Notifications';
+import { AuditLogPage } from './pages/audit/AuditLog';
+import { UsersRolesPage } from './pages/users/UsersRoles';
+import { SettingsPage } from './pages/settings/Settings';
 import { PortalHomePage } from './pages/portal/PortalHome';
 import { PlaceOrderPage } from './pages/portal/PlaceOrder';
 import { PortalOrdersPage } from './pages/portal/PortalOrders';
@@ -75,6 +87,9 @@ PLACEHOLDER_PATHS.delete('/'); // dashboard is real
   '/orders', '/orders/new', '/orders/:id', '/consolidation', '/portal/order',
   '/purchase', '/purchase/new', '/receiving', '/receiving/new', '/quality-check', '/allocation', '/shortage',
   '/packing', '/delivery', '/challans', '/challans/:id', '/driver',
+  '/invoices', '/invoices/new', '/invoices/:id', '/payments', '/payments/new', '/outstanding', '/ledger',
+  '/reports/operations', '/reports/sales', '/reports/purchase', '/analytics', '/notifications', '/audit-logs',
+  '/users', '/settings',
 ].forEach((p) => PLACEHOLDER_PATHS.delete(p));
 
 export default function App() {
@@ -119,6 +134,22 @@ export default function App() {
               <Route path="/delivery" element={<RequireModule module="delivery"><DeliveryDashboardPage /></RequireModule>} />
               <Route path="/challans" element={<RequireModule module="delivery"><ChallansListPage /></RequireModule>} />
               <Route path="/challans/:id" element={<RequireModule module="delivery"><ChallanDetailPage /></RequireModule>} />
+
+              <Route path="/invoices" element={<RequireModule module="invoices"><InvoicesListPage /></RequireModule>} />
+              <Route path="/invoices/new" element={<RequireModule module="invoices" action="create"><CreateInvoicePage /></RequireModule>} />
+              <Route path="/invoices/:id" element={<RequireModule module="invoices"><InvoiceDetailPage /></RequireModule>} />
+              <Route path="/payments" element={<RequireModule module="payments"><PaymentsListPage /></RequireModule>} />
+              <Route path="/payments/new" element={<RequireModule module="payments" action="create"><PaymentsListPage /></RequireModule>} />
+              <Route path="/outstanding" element={<RequireModule module="outstanding"><OutstandingPage /></RequireModule>} />
+              <Route path="/ledger" element={<RequireModule module="ledger"><CustomerLedgerPage /></RequireModule>} />
+              <Route path="/reports/operations" element={<RequireModule module="reports"><OperationsReportsPage /></RequireModule>} />
+              <Route path="/reports/sales" element={<RequireModule module="reports"><SalesReportsPage /></RequireModule>} />
+              <Route path="/reports/purchase" element={<RequireModule module="reports"><PurchaseReportsPage /></RequireModule>} />
+              <Route path="/analytics" element={<RequireModule module="analytics"><AnalyticsPage /></RequireModule>} />
+              <Route path="/notifications" element={<RequireModule module="notifications"><NotificationsPage /></RequireModule>} />
+              <Route path="/audit-logs" element={<RequireModule module="audit"><AuditLogPage /></RequireModule>} />
+              <Route path="/users" element={<RequireModule module="users"><UsersRolesPage /></RequireModule>} />
+              <Route path="/settings" element={<RequireModule module="settings"><SettingsPage /></RequireModule>} />
               {[...PLACEHOLDER_PATHS.entries()].map(([path, meta]) => (
                 <Route
                   key={path}

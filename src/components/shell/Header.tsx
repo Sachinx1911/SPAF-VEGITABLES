@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CalendarDays, ChevronDown, LogOut, Menu, Search, Settings, UserRound } from 'lucide-react';
+import { CalendarDays, ChevronDown, LogOut, Menu, RotateCcw, Search, Settings, UserRound } from 'lucide-react';
 import { IconButton } from '../ui/Button';
 import { QuickAdd } from './QuickAdd';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationsMenu } from './NotificationsMenu';
 import { Menu as DropMenu } from '../ui/Dropdown';
+import { useConfirm } from '../ui/ConfirmDialog';
+import { useToast } from '../ui/Toast';
 import { useStore, useCurrentUser } from '../../store/useStore';
 import { todayISO } from '../../lib/clock';
 import { fmtDate, weekday, initials } from '../../lib/format';
@@ -16,10 +18,21 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const user = useCurrentUser();
   const logout = useStore((s) => s.logout);
   const loginAs = useStore((s) => s.loginAs);
+  const resetDemo = useStore((s) => s.resetDemo);
   const db = useStore((s) => s.db);
   const nav = useNavigate();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [searchOpen, setSearchOpen] = useState(false);
   const today = todayISO();
+
+  const doReset = async () => {
+    const ok = await confirm({ title: 'Reset demo data?', description: 'Every order, purchase, delivery and payment you\'ve created will be discarded and the original seed restored.', tone: 'danger', confirmLabel: 'Reset data' });
+    if (!ok) return;
+    resetDemo();
+    toast({ tone: 'success', title: 'Demo data reset' });
+    nav('/');
+  };
 
   const roleLabel = user ? (ROLES.find((r) => r.key === user.role)?.name ?? user.role) : '';
 
@@ -54,6 +67,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
               ? [{ key: 'admin-demo', label: 'Switch to Admin (demo)', icon: <UserRound size={14} />, onClick: () => { loginAs('u_admin'); nav('/'); } }]
               : []),
             { key: 'roles', label: 'Switch demo role…', icon: <UserRound size={14} />, onClick: () => nav('/switch-role') },
+            { key: 'reset', label: 'Reset demo data', icon: <RotateCcw size={14} />, onClick: doReset },
             { key: 'divider2', label: '', divider: true },
             { key: 'logout', label: 'Sign out', icon: <LogOut size={14} />, danger: true, onClick: () => { logout(); nav('/login'); } },
           ]}

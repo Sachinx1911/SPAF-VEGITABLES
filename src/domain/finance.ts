@@ -1,4 +1,4 @@
-import type { Database, Invoice, InvoiceStatus } from '../types/models';
+import type { Database, Invoice, InvoiceStatus, Order } from '../types/models';
 import { daysBetween } from '../lib/format';
 
 export interface InvoiceView extends Invoice {
@@ -60,6 +60,11 @@ export function outstandingSummary(db: Database, today: string): OutstandingSumm
     }),
     customers: new Set(open.map((i) => i.customerId)).size,
   };
+}
+
+/** Orders that have been delivered/accepted but not yet invoiced — Create Invoice's queue. */
+export function ordersReadyToInvoice(db: Database): Order[] {
+  return db.orders.filter((o) => o.invoiceStatus === 'Ready' && (o.status === 'Completed' || o.status === 'Partially Fulfilled'));
 }
 
 export function customerOutstanding(db: Database, today: string): Map<string, number> {
