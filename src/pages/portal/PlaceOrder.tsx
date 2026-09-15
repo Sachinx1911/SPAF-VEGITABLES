@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, ListChecks, Save, Search, Trash2, Zap } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { SearchInput, QtyInput } from '../../components/ui/Field';
 import { Badge } from '../../components/ui/Badge';
@@ -9,6 +9,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { createOrder } from '../../store/orderActions';
+import { saveTemplate, deleteTemplate } from '../../store/templateActions';
 import { CATEGORIES } from '../../types/models';
 import { isPastCutoff, nextDeliveryDate, previousOrder } from '../../domain/orders';
 import { todayISO, nowISO } from '../../lib/clock';
@@ -16,6 +17,7 @@ import { fmtDate, inr, qty, weekday } from '../../lib/format';
 import { useOrderBasket } from '../orders/useOrderBasket';
 import { cn } from '../../lib/cn';
 import { RepeatOrderModal } from '../orders/RepeatOrderModal';
+import { SaveTemplateModal } from './SaveTemplateModal';
 
 const ALL = 'All';
 
@@ -35,10 +37,39 @@ export function PlaceOrderPage() {
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [repeatOpen, setRepeatOpen] = useState(() => new URLSearchParams(loc.search).get('repeat') === '1');
+  const [saveOpen, setSaveOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [appliedTemplate, setAppliedTemplate] = useState(false);
 
   const prev = previousOrder(db, customer.id);
   const pastCutoff = isPastCutoff(nowISO(), db.settings.orderCutoffTime);
+  const templates = db.standingTemplates.filter((t) => t.customerId === customer.id);
+
+  // ?template=<id> from Home's quick-launch cards loads it straight in, no extra tap.
+  useEffect(() => {
+    if (appliedTemplate) return;
+    const templateId = new URLSearchParams(loc.search).get('template');
+    const tpl = templateId ? templates.find((t) => t.id === templateId) : null;
+    if (tpl) {
+      basket.clear();
+      tpl.lines.forEach((l) => basket.setQty(l.itemId, l.qty));
+      setAppliedTemplate(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.search]);
+
+  const applyTemplate = (tplId: string) => {
+    const tpl = templates.find((t) => t.id === tplId);
+    if (!tpl) return;
+    basket.clear();
+    tpl.lines.forEach((l) => basket.setQty(l.itemId, l.qty));
+    toast({ tone: 'success', title: `"${tpl.name}" loaded`, description: `Exactly ${tpl.lines.length} items — review and submit.` });
+  };
+
+  const removeTemplate = async (tplId: string, name: string) => {
+    const ok = await confirm({ title: `Delete "${name}"?`, tone: 'danger', confirmLabel: 'Delete' });
+    if (ok) { deleteTemplate(tplId, user.id); toast({ tone: 'success', title: 'Fixed order deleted' }); }
+  };
 
   const term = search.trim().toLowerCase();
   const visibleFavourites = useMemo(() => {
@@ -91,6 +122,25 @@ export function PlaceOrderPage() {
         <p className="text-[12.5px] text-muted">Delivery {weekday(deliveryDate)}, {fmtDate(deliveryDate)}{pastCutoff ? ' · today\'s cutoff has passed' : ''}</p>
       </div>
 
+      {templates.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-subtle uppercase"><Zap size={12} /> Your fixed orders — one tap, no searching</p>
+          {templates.map((t) => (
+            <div key={t.id} className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50/60 p-2.5">
+              <ListChecks size={16} className="shrink-0 text-brand-700" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13.5px] font-semibold text-ink">{t.name}</p>
+                <p className="text-[11.5px] text-muted">{t.lines.length} items</p>
+              </div>
+              <Button size="xs" variant="primary" onClick={() => applyTemplate(t.id)}>Use</Button>
+              <button onClick={() => removeTemplate(t.id, t.name)} className="shrink-0 rounded p-1.5 text-subtle hover:bg-white hover:text-red-600" aria-label={`Delete ${t.name}`}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {prev && (
         <button onClick={() => setRepeatOpen(true)} className="rounded-lg border border-dashed border-brand-300 bg-brand-50 px-3 py-2.5 text-left text-[13px] font-medium text-brand-800">
           Load quantities from your last order ({fmtDate(prev.deliveryDate)}) →
@@ -137,6 +187,10 @@ export function PlaceOrderPage() {
       )}
 
       {basket.totalItems > 0 && (
+        <Button variant="secondary" icon={Save} onClick={() => setSaveOpen(true)} className="mt-1">Save this as a fixed order</Button>
+      )}
+
+      {basket.totalItems > 0 && (
         <div className="fixed inset-x-0 bottom-16 z-20 mx-auto w-full max-w-lg border-t border-line bg-white/95 px-4 py-3 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div className="text-[13px]">
@@ -156,6 +210,16 @@ export function PlaceOrderPage() {
           Object.entries(qtys).forEach(([itemId, q]) => basket.setQty(itemId, q));
           setRepeatOpen(false);
           toast({ tone: 'success', title: 'Loaded — review and submit' });
+        }}
+      />
+      <SaveTemplateModal
+        open={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        defaultName={templates.length ? `Fixed Order ${templates.length + 1}` : 'Daily Regular'}
+        onSave={(name) => {
+          saveTemplate(customer.id, name, basket.lines.map((l) => ({ itemId: l.itemId, unit: l.unit, qty: l.qty })), user.id);
+          setSaveOpen(false);
+          toast({ tone: 'success', title: 'Fixed order saved', description: `"${name}" — use it next time in one tap.` });
         }}
       />
     </div>

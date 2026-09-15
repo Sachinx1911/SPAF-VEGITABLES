@@ -85,7 +85,19 @@ export function OutstandingPage() {
         {rows.length === 0 ? (
           <EmptyState icon={Wallet} title="No outstanding dues" description="Every invoice has been paid in full." />
         ) : (
-          <DataTable columns={columns} rows={rows} rowKey={(r) => r.customer.id} onRowClick={(r) => nav(`/customers/${r.customer.id}`)} exportFilename="outstanding" pageSize={50} />
+          <DataTable
+            columns={columns} rows={rows} rowKey={(r) => r.customer.id} onRowClick={(r) => nav(`/customers/${r.customer.id}`)} exportFilename="outstanding" pageSize={50}
+            cardRender={(r) => (
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-[13.5px] font-medium text-ink">{r.customer.name}</p>
+                  <StatusBadge status={r.status} />
+                </div>
+                <p className="mt-0.5 text-xs text-muted">{r.invoiceCount} invoices · oldest due {fmtDate(r.oldestDue)}</p>
+                <p className="tabular mt-1 text-[13px] font-semibold text-orange-600">{inr(r.outstanding)}</p>
+              </div>
+            )}
+          />
         )}
       </Card>
     </div>

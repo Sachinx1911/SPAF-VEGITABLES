@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { CheckCircle2, ChevronRight, Clock, Repeat, ShoppingBasket, Wallet } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Clock, ListChecks, Repeat, ShoppingBasket, Wallet, Zap } from 'lucide-react';
 import { Card, CardBody } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusBadge } from '../../components/ui/Badge';
@@ -18,6 +18,7 @@ export function PortalHomePage() {
   const today = todayISO();
   const now = nowISO();
 
+  const templates = db.standingTemplates.filter((t) => t.customerId === customer.id);
   const upcoming = db.orders.filter((o) => o.customerId === customer.id && o.deliveryDate >= today).sort((a, b) => (a.deliveryDate < b.deliveryDate ? -1 : 1))[0];
   const prev = previousOrder(db, customer.id);
   const outstanding = customerOutstanding(db, today).get(customer.id) ?? 0;
@@ -48,6 +49,24 @@ export function PortalHomePage() {
           <ChevronRight size={20} />
         </div>
       </button>
+
+      {templates.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-subtle uppercase"><Zap size={12} /> Your fixed orders</p>
+          {templates.map((t) => (
+            <button key={t.id} onClick={() => nav(`/portal/order?template=${t.id}`)} className="rounded-card border border-brand-200 bg-brand-50/60 p-3.5 text-left transition-colors active:bg-brand-100">
+              <div className="flex items-center gap-3">
+                <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-700 text-white"><ListChecks size={20} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold text-ink">{t.name}</p>
+                  <p className="text-[12.5px] text-muted">{t.lines.length} items · loads instantly, no searching</p>
+                </div>
+                <ChevronRight size={18} className="text-subtle" />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {prev && (
         <button onClick={() => nav('/portal/order?repeat=1')} className="rounded-card border border-line bg-white p-4 text-left shadow-card transition-colors active:bg-canvas">

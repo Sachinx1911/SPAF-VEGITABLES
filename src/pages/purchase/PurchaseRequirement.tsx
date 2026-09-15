@@ -61,6 +61,16 @@ export function PurchaseRequirementPage() {
           emptyTitle="No purchase requirement yet"
           emptyDescription="Lock consolidation for this delivery date first — the requirement generates automatically."
           emptyAction={<Button size="sm" variant="secondary" onClick={() => nav('/consolidation')} className="mt-1">Go to Consolidation</Button>}
+          cardRender={(r) => (
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[13.5px] font-medium text-ink">{r.name} <Badge tone="neutral" className="ml-1">{r.unit}</Badge></p>
+                <StatusBadge status={r.status} />
+              </div>
+              <p className="mt-0.5 text-xs text-muted">Required {qty(r.required, r.unit)} · Purchased {qty(r.purchased, r.unit)}</p>
+              <p className={`tabular mt-1 text-[13px] font-semibold ${r.toPurchase > 0 ? 'text-orange-600' : 'text-emerald-600'}`}>To purchase: {qty(r.toPurchase, r.unit)}</p>
+            </div>
+          )}
         />
       </Card>
     </div>

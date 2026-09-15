@@ -66,6 +66,16 @@ export function PaymentsListPage() {
             filters={<Select value={mode} onChange={(e) => setMode(e.target.value)} placeholder="All modes" options={MODES} className="w-36" />}
             emptyTitle="No payments found"
             pageSize={50}
+            cardRender={(p) => (
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13.5px] font-medium text-brand-700">{p.receiptNo}</p>
+                  <Badge tone="blue">{p.mode}</Badge>
+                </div>
+                <p className="mt-0.5 text-xs text-muted">{custById.get(p.customerId)?.name} · {fmtDate(p.paymentDate)}</p>
+                <p className="tabular mt-1 text-[13px] font-semibold text-ink">{inr(p.amount)}</p>
+              </div>
+            )}
           />
         )}
       </Card>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { ArrowLeft, Repeat, Search, ShoppingBasket } from 'lucide-react';
+import { ArrowLeft, Repeat, Search, ShoppingBasket, Zap } from 'lucide-react';
 import { PageHeader, Card, CardBody } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Select, SearchInput, QtyInput } from '../../components/ui/Field';
@@ -37,6 +37,15 @@ export function NewOrderPage() {
   const customer = db.customers.find((c) => c.id === customerId);
   const basket = useOrderBasket(db, customerId, deliveryDate);
   const prevOrder = customerId ? previousOrder(db, customerId) : null;
+  const templates = db.standingTemplates.filter((t) => t.customerId === customerId);
+
+  const applyTemplate = (templateId: string) => {
+    const tpl = templates.find((t) => t.id === templateId);
+    if (!tpl) return;
+    basket.clear();
+    tpl.lines.forEach((l) => basket.setQty(l.itemId, l.qty));
+    toast({ tone: 'success', title: `"${tpl.name}" loaded`, description: `Exactly ${tpl.lines.length} items — review and submit.` });
+  };
 
   const rowsForCategory = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -92,6 +101,16 @@ export function NewOrderPage() {
               <Button variant="secondary" icon={Repeat} onClick={() => setRepeatOpen(true)} className="w-full">Repeat Previous Order</Button>
             )}
           </div>
+          {customer && templates.length > 0 && (
+            <div className="sm:col-span-3">
+              <label className="mb-1.5 block text-[12.5px] font-medium text-ink">Or use this customer's fixed order</label>
+              <div className="flex flex-wrap gap-2">
+                {templates.map((t) => (
+                  <Button key={t.id} variant="subtle" size="sm" icon={Zap} onClick={() => applyTemplate(t.id)}>{t.name} ({t.lines.length})</Button>
+                ))}
+              </div>
+            </div>
+          )}
         </CardBody>
       </Card>
 

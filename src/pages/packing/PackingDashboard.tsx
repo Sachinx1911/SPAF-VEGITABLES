@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { PackageCheck } from 'lucide-react';
+import { ChevronRight, PackageCheck } from 'lucide-react';
 import { PageHeader, Card, CardBody } from '../../components/ui/Card';
 import { Select } from '../../components/ui/Field';
 import { StatTile } from '../../components/ui/Kpi';
@@ -54,7 +54,21 @@ export function PackingDashboardPage() {
         {rows.length === 0 ? (
           <EmptyState icon={PackageCheck} title="Nothing to pack" description="Orders appear here once stock is allocated." />
         ) : (
-          <DataTable columns={columns} rows={rows} rowKey={(r) => r.order.id} onRowClick={(r) => nav(`/packing/${r.order.id}`)} pageSize={50} />
+          <DataTable
+            columns={columns} rows={rows} rowKey={(r) => r.order.id} onRowClick={(r) => nav(`/packing/${r.order.id}`)} pageSize={50}
+            cardRender={(r) => (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[13.5px] font-medium text-ink">{r.customer.name}</p>
+                  <p className="truncate text-xs text-muted">{r.route?.name ?? '—'} · {r.allocatedLines} items{r.priority === 'Urgent' ? ' · Urgent' : ''}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <StatusBadge status={r.status === 'Packing' ? 'Packing' : r.status} />
+                  <ChevronRight size={16} className="text-subtle" />
+                </div>
+              </div>
+            )}
+          />
         )}
       </Card>
     </div>

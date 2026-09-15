@@ -80,7 +80,22 @@ export function DeliveryDashboardPage() {
         {rows.length === 0 ? (
           <EmptyState icon={Truck} title="No deliveries yet" description="Challans appear here once orders are packed." />
         ) : (
-          <DataTable columns={columns} rows={rows} rowKey={(r) => r.challan.id} pageSize={50} />
+          <DataTable
+            columns={columns} rows={rows} rowKey={(r) => r.challan.id} pageSize={50}
+            cardRender={(r) => (
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-[13.5px] font-medium text-ink">{r.customer?.name ?? '—'}</p>
+                  <StatusBadge status={r.challan.status} />
+                </div>
+                <p className="mt-0.5 text-xs text-muted">{r.route?.name ?? '—'} · {r.challan.packages} packages · {r.driverName}</p>
+                <div className="mt-2 flex gap-2">
+                  {r.challan.status === 'Ready' && <Button size="xs" variant="primary" onClick={(e) => { e.stopPropagation(); doDispatch(r); }}>Dispatch</Button>}
+                  <Button size="xs" variant="secondary" onClick={(e) => { e.stopPropagation(); nav(`/challans/${r.challan.id}`); }}>View</Button>
+                </div>
+              </div>
+            )}
+          />
         )}
       </Card>
     </div>

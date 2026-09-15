@@ -73,6 +73,19 @@ export function InvoicesListPage() {
             }
             emptyTitle="No invoices found"
             pageSize={50}
+            cardRender={(i) => (
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13.5px] font-medium text-brand-700">{i.invoiceNo}</p>
+                  <StatusBadge status={i.derivedStatus} />
+                </div>
+                <p className="mt-0.5 text-xs text-muted">{custById.get(i.customerId)?.name} · {fmtDate(i.invoiceDate)}</p>
+                <div className="mt-1.5 flex items-center justify-between text-[13px]">
+                  <span className="tabular font-semibold text-ink">{inr(i.total)}</span>
+                  {i.balance > 0 && <span className="tabular font-medium text-orange-600">{inr(i.balance)} due</span>}
+                </div>
+              </div>
+            )}
           />
         )}
       </Card>

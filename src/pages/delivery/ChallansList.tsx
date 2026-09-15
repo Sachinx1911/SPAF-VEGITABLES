@@ -63,6 +63,15 @@ export function ChallansListPage() {
           }
           emptyTitle="No challans found"
           pageSize={50}
+          cardRender={(c) => (
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[13.5px] font-medium text-brand-700">{c.challanNo}</p>
+                <StatusBadge status={c.status} />
+              </div>
+              <p className="mt-0.5 text-xs text-muted">{custById.get(c.customerId)?.name} · {fmtDate(c.challanDate)} · {c.packages} packages</p>
+            </div>
+          )}
         />
       </Card>
     </div>

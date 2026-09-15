@@ -9,7 +9,7 @@ import { DEMO_NOW } from '../../lib/clock';
 import { COMPANY, CONTACT_NAMES, ITEMS, ITEM_QTY_SHEET, PARTIES, ROUTES, SUPPLIERS, type Demand } from './masters';
 import { ROLES, USERS } from './roles';
 
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 /* ------------------------------------------------------------------ rng */
 
@@ -828,6 +828,23 @@ export function generateSeed(): Database {
 
   const qtySheetIds = ITEM_QTY_SHEET.map((n) => itemByExcel.get(n)?.id).filter((x): x is string => !!x);
 
+  // A saved "fixed order" for the customer-portal demo account, so the fast-order flow has data on first load.
+  const standingTemplates: Database['standingTemplates'] = [];
+  const demoCust = custByCode.get('ZQ');
+  if (demoCust) {
+    const fav = favourites.get(demoCust.id);
+    if (fav && fav.size) {
+      const lines = [...fav.entries()]
+        .sort((a, b) => itemById.get(a[0])!.sortOrder - itemById.get(b[0])!.sortOrder)
+        .slice(0, 14)
+        .map(([itemId, q]) => ({ itemId, unit: itemById.get(itemId)!.unit, qty: roundQ(q, itemById.get(itemId)!) }));
+      standingTemplates.push({
+        id: uid('tpl'), customerId: demoCust.id, name: 'Daily Regular', lines,
+        createdAt: at('2026-08-20', 10, 0), updatedAt: at('2026-08-20', 10, 0),
+      });
+    }
+  }
+
   return {
     meta: { version: SEED_VERSION, seededAt: Date.now(), seq },
     settings: {
@@ -841,6 +858,6 @@ export function generateSeed(): Database {
     },
     routes, customers, items, prices, suppliers, orders, orderItems, locks, requirements, purchaseOrders, purchaseOrderItems,
     receivings, receivingItems, qualityChecks, allocations, packings, packingItems, challans, invoices, invoiceItems, payments,
-    openingBalances: [], roles: ROLES, users, auditLogs, snapshots,
+    openingBalances: [], roles: ROLES, users, auditLogs, snapshots, standingTemplates,
   };
 }

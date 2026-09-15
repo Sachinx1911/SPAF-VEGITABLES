@@ -393,6 +393,19 @@ export interface OpeningBalance {
   amount: number;
 }
 
+/**
+ * table: standing_order_templates — a customer's own saved "fixed order", so daily
+ * ordering is one tap instead of searching the catalog every time.
+ */
+export interface StandingOrderTemplate {
+  id: ID;
+  customerId: ID;
+  name: string; // e.g. "Daily Regular", "Weekend Order"
+  lines: { itemId: ID; unit: Unit; qty: number }[];
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
 /** Derived (view) — computed from invoices + payments, never stored separately. */
 export interface LedgerEntry {
   date: ISODate;
@@ -538,4 +551,5 @@ export interface Database {
   users: User[];
   auditLogs: AuditLog[];
   snapshots: DailySnapshot[];
+  standingTemplates: StandingOrderTemplate[];
 }

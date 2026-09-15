@@ -37,7 +37,19 @@ export function ReceivingPage() {
     <div>
       <PageHeader title="Receiving" description={`${queue.length} purchase orders waiting for a GRN`} />
       <Card className="mb-4">
-        <DataTable columns={columns} rows={queue} rowKey={(r) => r.po.id} emptyTitle="Nothing to receive" emptyDescription="Every confirmed purchase has been received." />
+        <DataTable
+          columns={columns} rows={queue} rowKey={(r) => r.po.id} emptyTitle="Nothing to receive" emptyDescription="Every confirmed purchase has been received."
+          cardRender={(r) => (
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[13.5px] font-medium text-brand-700">{r.po.poNo}</p>
+                <StatusBadge status={r.po.status} />
+              </div>
+              <p className="mt-0.5 text-xs text-muted">{r.supplierName} · {r.lineCount} items · {num(r.totalQty)} qty</p>
+              <Button size="xs" variant="primary" className="mt-2" onClick={() => setReceiving(r.po)}>Receive</Button>
+            </div>
+          )}
+        />
       </Card>
       <Card>
         <div className="border-b border-line px-4 py-3"><p className="text-[13px] font-semibold text-ink">Recent GRNs</p></div>
