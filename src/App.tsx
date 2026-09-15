@@ -2,6 +2,7 @@ import { HashRouter, Route, Routes } from 'react-router';
 import { ToastProvider } from './components/ui/Toast';
 import { ConfirmProvider } from './components/ui/ConfirmDialog';
 import { AppShell } from './components/shell/AppShell';
+import { CustomerShell } from './components/shell/CustomerShell';
 import { RequireAuth, RequireModule } from './components/shell/RouteGuard';
 import { LoginPage } from './pages/auth/Login';
 import { SwitchRolePage } from './pages/auth/SwitchRole';
@@ -15,6 +16,15 @@ import { ItemDetailPage } from './pages/items/ItemDetail';
 import { CategoriesPage } from './pages/items/CategoriesPage';
 import { CustomerPricesPage } from './pages/prices/CustomerPrices';
 import { StockPage } from './pages/stock/StockPage';
+import { OrdersListPage } from './pages/orders/OrdersList';
+import { NewOrderPage } from './pages/orders/NewOrder';
+import { OrderDetailPage } from './pages/orders/OrderDetail';
+import { ConsolidationPage } from './pages/consolidation/Consolidation';
+import { PortalHomePage } from './pages/portal/PortalHome';
+import { PlaceOrderPage } from './pages/portal/PlaceOrder';
+import { PortalOrdersPage } from './pages/portal/PortalOrders';
+import { PortalInvoicesPage } from './pages/portal/PortalInvoices';
+import { PortalLedgerPage } from './pages/portal/PortalLedger';
 import { NotFoundPage, SessionExpiredPage } from './pages/states/StatePages';
 import { ALL_ROUTES } from './lib/nav';
 import type { ModuleKey } from './types/models';
@@ -41,10 +51,11 @@ for (const item of ALL_ROUTES) {
   ['/analytics/trends', 6, 'analytics', 'Trends'],
 ].forEach(([path, phase, module, label]) => PLACEHOLDER_PATHS.set(path as string, { module: module as ModuleKey, phase: phase as number, label: label as string }));
 PLACEHOLDER_PATHS.delete('/'); // dashboard is real
-// Phase 2 screens are real now — built out of the placeholder list.
-['/customers', '/customers/new', '/customers/:id', '/items', '/items/new', '/items/:id', '/categories', '/prices', '/stock'].forEach((p) =>
-  PLACEHOLDER_PATHS.delete(p),
-);
+// Phase 2 & 3 screens are real now — built out of the placeholder list.
+[
+  '/customers', '/customers/new', '/customers/:id', '/items', '/items/new', '/items/:id', '/categories', '/prices', '/stock',
+  '/orders', '/orders/new', '/orders/:id', '/consolidation', '/portal/order',
+].forEach((p) => PLACEHOLDER_PATHS.delete(p));
 
 export default function App() {
   return (
@@ -69,6 +80,11 @@ export default function App() {
               <Route path="/categories" element={<RequireModule module="categories"><CategoriesPage /></RequireModule>} />
               <Route path="/prices" element={<RequireModule module="prices"><CustomerPricesPage /></RequireModule>} />
               <Route path="/stock" element={<RequireModule module="stock"><StockPage /></RequireModule>} />
+
+              <Route path="/orders" element={<RequireModule module="orders"><OrdersListPage /></RequireModule>} />
+              <Route path="/orders/new" element={<RequireModule module="orders" action="create"><NewOrderPage /></RequireModule>} />
+              <Route path="/orders/:id" element={<RequireModule module="orders"><OrderDetailPage /></RequireModule>} />
+              <Route path="/consolidation" element={<RequireModule module="consolidation"><ConsolidationPage /></RequireModule>} />
               {[...PLACEHOLDER_PATHS.entries()].map(([path, meta]) => (
                 <Route
                   key={path}
@@ -81,6 +97,14 @@ export default function App() {
                 />
               ))}
               <Route path="*" element={<NotFoundPage />} />
+            </Route>
+
+            <Route element={<RequireAuth><CustomerShell /></RequireAuth>}>
+              <Route path="/portal" element={<RequireModule module="portal"><PortalHomePage /></RequireModule>} />
+              <Route path="/portal/order" element={<RequireModule module="portal" action="create"><PlaceOrderPage /></RequireModule>} />
+              <Route path="/portal/orders" element={<RequireModule module="portal"><PortalOrdersPage /></RequireModule>} />
+              <Route path="/portal/invoices" element={<RequireModule module="portal"><PortalInvoicesPage /></RequireModule>} />
+              <Route path="/portal/ledger" element={<RequireModule module="portal"><PortalLedgerPage /></RequireModule>} />
             </Route>
           </Routes>
         </HashRouter>

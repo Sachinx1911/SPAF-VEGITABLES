@@ -184,11 +184,11 @@ export function QtyInput({
     }
   };
 
-  const h = size === 'lg' ? 'h-12 text-base' : size === 'sm' ? 'h-8 text-[13px]' : 'h-9 text-[13px]';
+  const h = size === 'lg' ? 'h-12 w-44 text-base' : size === 'sm' ? 'h-8 w-28 text-[13px]' : 'h-9 w-32 text-[13px]';
   return (
     <div
       className={cn(
-        'flex items-stretch overflow-hidden rounded-lg border bg-white transition focus-within:ring-3',
+        'flex shrink-0 items-stretch overflow-hidden rounded-lg border bg-white transition focus-within:ring-3',
         over || invalid ? 'border-red-400 focus-within:ring-red-100' : 'border-line focus-within:border-brand-400 focus-within:ring-brand-100',
         disabled && 'bg-canvas opacity-70', h,
       )}
