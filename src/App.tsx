@@ -26,6 +26,18 @@ import { ReceivingPage } from './pages/receiving/Receiving';
 import { QualityCheckPage } from './pages/receiving/QualityCheck';
 import { AllocationPage } from './pages/allocation/Allocation';
 import { ShortageExcessPage } from './pages/allocation/ShortageExcess';
+import { PackingDashboardPage } from './pages/packing/PackingDashboard';
+import { CustomerPackingPage } from './pages/packing/CustomerPacking';
+import { DeliveryDashboardPage } from './pages/delivery/DeliveryDashboard';
+import { ChallansListPage } from './pages/delivery/ChallansList';
+import { ChallanDetailPage } from './pages/delivery/ChallanDetail';
+import { DriverShell } from './components/shell/DriverShell';
+import { DriverTodayPage } from './pages/driver/DriverToday';
+import { DriverDeliveriesPage } from './pages/driver/DriverDeliveries';
+import { DriverChallansPage } from './pages/driver/DriverChallans';
+import { DriverHistoryPage } from './pages/driver/DriverHistory';
+import { DriverProfilePage } from './pages/driver/DriverProfile';
+import { DeliveryConfirmationPage } from './pages/driver/DeliveryConfirmation';
 import { PortalHomePage } from './pages/portal/PortalHome';
 import { PlaceOrderPage } from './pages/portal/PlaceOrder';
 import { PortalOrdersPage } from './pages/portal/PortalOrders';
@@ -62,6 +74,7 @@ PLACEHOLDER_PATHS.delete('/'); // dashboard is real
   '/customers', '/customers/new', '/customers/:id', '/items', '/items/new', '/items/:id', '/categories', '/prices', '/stock',
   '/orders', '/orders/new', '/orders/:id', '/consolidation', '/portal/order',
   '/purchase', '/purchase/new', '/receiving', '/receiving/new', '/quality-check', '/allocation', '/shortage',
+  '/packing', '/delivery', '/challans', '/challans/:id', '/driver',
 ].forEach((p) => PLACEHOLDER_PATHS.delete(p));
 
 export default function App() {
@@ -100,6 +113,12 @@ export default function App() {
               <Route path="/quality-check" element={<RequireModule module="receiving"><QualityCheckPage /></RequireModule>} />
               <Route path="/allocation" element={<RequireModule module="allocation"><AllocationPage /></RequireModule>} />
               <Route path="/shortage" element={<RequireModule module="allocation"><ShortageExcessPage /></RequireModule>} />
+
+              <Route path="/packing" element={<RequireModule module="packing"><PackingDashboardPage /></RequireModule>} />
+              <Route path="/packing/:orderId" element={<RequireModule module="packing" action="edit"><CustomerPackingPage /></RequireModule>} />
+              <Route path="/delivery" element={<RequireModule module="delivery"><DeliveryDashboardPage /></RequireModule>} />
+              <Route path="/challans" element={<RequireModule module="delivery"><ChallansListPage /></RequireModule>} />
+              <Route path="/challans/:id" element={<RequireModule module="delivery"><ChallanDetailPage /></RequireModule>} />
               {[...PLACEHOLDER_PATHS.entries()].map(([path, meta]) => (
                 <Route
                   key={path}
@@ -120,6 +139,16 @@ export default function App() {
               <Route path="/portal/orders" element={<RequireModule module="portal"><PortalOrdersPage /></RequireModule>} />
               <Route path="/portal/invoices" element={<RequireModule module="portal"><PortalInvoicesPage /></RequireModule>} />
               <Route path="/portal/ledger" element={<RequireModule module="portal"><PortalLedgerPage /></RequireModule>} />
+            </Route>
+
+            <Route element={<RequireAuth><DriverShell /></RequireAuth>}>
+              <Route path="/driver" element={<RequireModule module="driver_app"><DriverTodayPage /></RequireModule>} />
+              <Route path="/driver/deliveries" element={<RequireModule module="driver_app"><DriverDeliveriesPage /></RequireModule>} />
+              <Route path="/driver/challans" element={<RequireModule module="driver_app"><DriverChallansPage /></RequireModule>} />
+              <Route path="/driver/challans/:id" element={<RequireModule module="driver_app"><ChallanDetailPage /></RequireModule>} />
+              <Route path="/driver/history" element={<RequireModule module="driver_app"><DriverHistoryPage /></RequireModule>} />
+              <Route path="/driver/profile" element={<RequireModule module="driver_app"><DriverProfilePage /></RequireModule>} />
+              <Route path="/driver/confirm/:challanId" element={<RequireModule module="driver_app" action="edit"><DeliveryConfirmationPage /></RequireModule>} />
             </Route>
           </Routes>
         </HashRouter>
