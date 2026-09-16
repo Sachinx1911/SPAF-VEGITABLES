@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CalendarDays, ChevronDown, LogOut, Menu, RotateCcw, Search, Settings, UserRound } from 'lucide-react';
+import { CalendarDays, ChevronDown, LogOut, Menu, RotateCcw, Search, Settings, Sprout, UserRound } from 'lucide-react';
 import { IconButton } from '../ui/Button';
 import { QuickAdd } from './QuickAdd';
 import { GlobalSearch } from './GlobalSearch';
@@ -40,9 +40,17 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
     <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-white/90 px-3 backdrop-blur md:px-5">
       <IconButton icon={Menu} label="Open menu" onClick={onOpenMobileNav} className="md:hidden" />
 
+      <div className="mr-2 hidden min-w-0 items-center gap-2.5 lg:flex">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-fresh-50 text-fresh-600"><Sprout size={17} /></span>
+        <div className="min-w-0">
+          <p className="truncate text-[12.5px] leading-tight font-bold text-ink">{db.settings.companyName}</p>
+          <p className="truncate text-[10.5px] leading-tight text-muted">Fresh Vegetables · Fruits · Herbs · Exotic Produce</p>
+        </div>
+      </div>
+
       <button
         onClick={() => setSearchOpen(true)}
-        className="flex h-9 w-44 items-center gap-2 rounded-lg border border-line bg-canvas/60 px-3 text-[13px] text-subtle transition hover:border-[#c9d3cc] sm:w-64 md:w-80"
+        className="flex h-9 w-44 items-center gap-2 rounded-lg border border-line bg-canvas/60 px-3 text-[13px] text-subtle transition hover:border-[#c9d3cc] sm:w-64 md:w-80 lg:mx-auto"
       >
         <Search size={15} />
         <span className="flex-1 truncate text-left">Search everything…</span>

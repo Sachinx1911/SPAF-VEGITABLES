@@ -58,6 +58,20 @@ export function previousOrder(db: Database, customerId: string): (Order & { line
   return { ...order, lines: db.orderItems.filter((l) => l.orderId === order.id) };
 }
 
+/**
+ * The order a customer may still change themselves: same delivery date, and not yet
+ * locked into a purchase requirement. Approved is still fair game — it just goes back
+ * for approval once they touch it.
+ */
+export function editableOrder(db: Database, customerId: string, deliveryDate: string): (Order & { lines: OrderItem[] }) | null {
+  const order = db.orders.find(
+    (o) => o.customerId === customerId && o.deliveryDate === deliveryDate &&
+      (o.status === 'Submitted' || o.status === 'Late' || o.status === 'Approved'),
+  );
+  if (!order) return null;
+  return { ...order, lines: db.orderItems.filter((l) => l.orderId === order.id) };
+}
+
 export function isPastCutoff(nowIso: string, cutoff: string): boolean {
   const hhmm = nowIso.slice(11, 16);
   return hhmm >= cutoff;

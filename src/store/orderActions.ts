@@ -24,6 +24,9 @@ export interface NewOrderInput {
   orderType?: Order['orderType'];
   source?: OrderSource;
   repeatOfOrderId?: string | null;
+  remarks?: string;
+  /** Parked for later — never flagged late and never reaches consolidation. */
+  draft?: boolean;
   lines: NewOrderLine[];
 }
 
@@ -38,7 +41,7 @@ export function createOrder(input: NewOrderInput, userId: string): Order {
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const today = todayISO();
-  const late = isPastCutoff(now, db.settings.orderCutoffTime) && input.deliveryDate <= addDays(today, 1);
+  const late = !input.draft && isPastCutoff(now, db.settings.orderCutoffTime) && input.deliveryDate <= addDays(today, 1);
 
   const order: Order = {
     id: uid('o'),
@@ -48,7 +51,7 @@ export function createOrder(input: NewOrderInput, userId: string): Order {
     deliveryDate: input.deliveryDate,
     orderType: input.orderType ?? 'Regular',
     source: input.source ?? 'Staff',
-    status: late ? 'Late' : 'Submitted',
+    status: input.draft ? 'Draft' : late ? 'Late' : 'Submitted',
     isLate: late,
     receivedAt: now,
     approvedBy: null,
@@ -58,7 +61,7 @@ export function createOrder(input: NewOrderInput, userId: string): Order {
     deliveryStatus: 'Pending',
     invoiceStatus: 'Not Ready',
     repeatOfOrderId: input.repeatOfOrderId ?? null,
-    remarks: '',
+    remarks: input.remarks ?? '',
     createdBy: userId,
     createdAt: now,
   };
@@ -69,9 +72,46 @@ export function createOrder(input: NewOrderInput, userId: string): Order {
   commit((d) => ({
     orders: [...d.orders, order],
     orderItems: [...d.orderItems, ...lines],
-    auditLogs: [auditRow(userId, late ? 'Late order flagged' : 'Order submitted', 'orders', order.orderNo, order.customerId, '', `${lines.length} items`, late ? 'Warning' : 'Success'), ...d.auditLogs],
+    auditLogs: [
+      auditRow(userId, input.draft ? 'Order draft saved' : late ? 'Late order flagged' : 'Order submitted', 'orders',
+        order.orderNo, order.customerId, '', `${lines.length} items`, late ? 'Warning' : 'Success'),
+      ...d.auditLogs,
+    ],
   }));
   return order;
+}
+
+/**
+ * Replaces an order's lines with what the customer now wants — how "add something to
+ * today's order" lands. Approval is withdrawn on every change, so the ops team always
+ * sees the final list before it reaches consolidation.
+ */
+export function amendOrder(orderId: string, lines: NewOrderLine[], userId: string): Order {
+  const { db, commit } = useStore.getState();
+  const order = db.orders.find((o) => o.id === orderId)!;
+  const now = nowISO();
+  const late = isPastCutoff(now, db.settings.orderCutoffTime) && order.deliveryDate <= addDays(todayISO(), 1);
+  const existing = new Map(db.orderItems.filter((l) => l.orderId === orderId).map((l) => [l.itemId, l]));
+
+  const next: OrderItem[] = lines.map((l) => {
+    const prev = existing.get(l.itemId);
+    return prev
+      ? { ...prev, unit: l.unit, rate: l.rate, remarks: l.remarks ?? prev.remarks, qty: { ...prev.qty, ordered: l.qty, approved: null } }
+      : { id: uid('oi'), orderId, itemId: l.itemId, unit: l.unit, rate: l.rate, qty: emptyChain(l.qty), remarks: l.remarks ?? '' };
+  });
+
+  const updated: Order = { ...order, status: late ? 'Late' : 'Submitted', isLate: late, approvedBy: null, approvedAt: null };
+
+  commit((d) => ({
+    orders: d.orders.map((o) => (o.id === orderId ? updated : o)),
+    orderItems: [...d.orderItems.filter((l) => l.orderId !== orderId), ...next],
+    auditLogs: [
+      auditRow(userId, 'Order changed by customer', 'orders', order.orderNo, order.customerId,
+        `${existing.size} items`, `${next.length} items`, late ? 'Warning' : 'Success'),
+      ...d.auditLogs,
+    ],
+  }));
+  return updated;
 }
 
 export function approveOrder(orderId: string, userId: string, adjustments?: Record<string, number>) {

@@ -1,2 +1,4 @@
 node_modules
 dist
+public/images/vegetables-source.png
+.DS_Store

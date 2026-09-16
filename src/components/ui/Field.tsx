@@ -158,6 +158,10 @@ interface QtyInputProps {
   autoFocus?: boolean;
   'aria-label'?: string;
   stepper?: boolean;
+  /** Off when the caller prints the unit beside the control itself. */
+  showUnit?: boolean;
+  /** Overrides the size's default width — tight phone rows need a narrower control. */
+  widthClass?: string;
 }
 
 /**
@@ -165,7 +169,8 @@ interface QtyInputProps {
  * unit, Enter jumps to the next quantity field in the table.
  */
 export function QtyInput({
-  value, unit, onChange, max, min = 0, step, size = 'md', invalid, disabled, autoFocus, stepper = true, ...aria
+  value, unit, onChange, max, min = 0, step, size = 'md', invalid, disabled, autoFocus, stepper = true, showUnit = true,
+  widthClass, ...aria
 }: QtyInputProps) {
   const s = step ?? qtyStep(unit);
   const over = max != null && value != null && value > max;
@@ -184,13 +189,15 @@ export function QtyInput({
     }
   };
 
-  const h = size === 'lg' ? 'h-12 w-44 text-base' : size === 'sm' ? 'h-8 w-28 text-[13px]' : 'h-9 w-32 text-[13px]';
+  const box = size === 'lg' ? { h: 'h-12', w: 'w-44', t: 'text-base' }
+    : size === 'sm' ? { h: 'h-8', w: 'w-28', t: 'text-[13px]' }
+    : { h: 'h-9', w: 'w-32', t: 'text-[13px]' };
   return (
     <div
       className={cn(
         'flex shrink-0 items-stretch overflow-hidden rounded-lg border bg-white transition focus-within:ring-3',
         over || invalid ? 'border-red-400 focus-within:ring-red-100' : 'border-line focus-within:border-brand-400 focus-within:ring-brand-100',
-        disabled && 'bg-canvas opacity-70', h,
+        disabled && 'bg-canvas opacity-70', box.h, widthClass ?? box.w, box.t,
       )}
     >
       {stepper && (
@@ -215,7 +222,9 @@ export function QtyInput({
         onKeyDown={onKey}
         className="tabular w-full min-w-0 bg-transparent px-2 text-right font-medium text-ink outline-none"
       />
-      <span className={cn('grid place-items-center bg-canvas px-2 text-xs font-medium text-muted', size === 'lg' && 'px-3 text-sm')}>{unit}</span>
+      {showUnit && (
+        <span className={cn('grid place-items-center bg-canvas px-2 text-xs font-medium text-muted', size === 'lg' && 'px-3 text-sm')}>{unit}</span>
+      )}
       {stepper && (
         <button type="button" tabIndex={-1} disabled={disabled} onClick={() => bump(1)} aria-label="Increase"
           className={cn('grid place-items-center border-l border-line text-muted hover:bg-canvas', size === 'lg' ? 'w-12' : 'w-8')}>

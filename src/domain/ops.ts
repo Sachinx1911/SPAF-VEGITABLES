@@ -155,6 +155,7 @@ export function operationsTimeline(db: Database, today: string): TimelineStep[] 
   const packed = packs.filter((p) => p.status === 'Packed').length;
   const chal = db.challans.filter((c) => c.challanDate === today);
   const delivered = chal.filter((c) => c.status === 'Delivered' || c.status === 'Partial').length;
+  const invoiced = db.invoices.filter((i) => i.invoiceDate === today).length;
   const needBuy = reqs.filter((r) => r.status !== 'OK').length;
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
   const firstAt = (xs: string[]) => (xs.length ? xs.sort()[0]! : null);
@@ -194,6 +195,12 @@ export function operationsTimeline(db: Database, today: string): TimelineStep[] 
       state: packs.length && delivered === packs.length ? 'done' : delivered ? 'active' : 'pending',
       progress: pct(delivered, packs.length), detail: `${delivered}/${packs.length} delivered`,
       at: firstAt(chal.map((c) => c.dispatchedAt).filter((x): x is string => !!x)),
+    },
+    {
+      key: 'invoicing', label: 'Invoicing', link: '/invoices',
+      state: delivered && invoiced >= delivered ? 'done' : invoiced ? 'active' : 'pending',
+      progress: pct(invoiced, delivered), detail: `${invoiced}/${delivered} invoiced`,
+      at: firstAt(db.invoices.filter((i) => i.invoiceDate === today).map((i) => i.createdAt)),
     },
   ];
 }

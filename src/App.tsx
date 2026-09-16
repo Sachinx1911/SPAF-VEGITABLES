@@ -55,6 +55,7 @@ import { PlaceOrderPage } from './pages/portal/PlaceOrder';
 import { PortalOrdersPage } from './pages/portal/PortalOrders';
 import { PortalInvoicesPage } from './pages/portal/PortalInvoices';
 import { PortalLedgerPage } from './pages/portal/PortalLedger';
+import { PortalAccountPage } from './pages/portal/PortalAccount';
 import { NotFoundPage, SessionExpiredPage } from './pages/states/StatePages';
 import { ALL_ROUTES } from './lib/nav';
 import type { ModuleKey } from './types/models';
@@ -170,6 +171,7 @@ export default function App() {
               <Route path="/portal/orders" element={<RequireModule module="portal"><PortalOrdersPage /></RequireModule>} />
               <Route path="/portal/invoices" element={<RequireModule module="portal"><PortalInvoicesPage /></RequireModule>} />
               <Route path="/portal/ledger" element={<RequireModule module="portal"><PortalLedgerPage /></RequireModule>} />
+              <Route path="/portal/account" element={<RequireModule module="portal"><PortalAccountPage /></RequireModule>} />
             </Route>
 
             <Route element={<RequireAuth><DriverShell /></RequireAuth>}>

@@ -53,20 +53,23 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   if (!open || !root) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="animate-fade-in fixed inset-0 bg-[#0c1a10]/45" onClick={onClose} />
-      <div className={cn('animate-slide-up relative my-8 w-full rounded-card border border-line bg-white shadow-pop', SIZES[size])}>
+      {/* The wrapper owns the width; an auto grid track would let wide content stretch the panel past the viewport. */}
+      <div className="relative flex min-h-full items-center justify-center p-3 sm:p-4">
+      <div className={cn('animate-slide-up relative my-4 w-full min-w-0 rounded-card border border-line bg-white shadow-pop sm:my-8', SIZES[size])}>
         {title && (
-          <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-            <div>
+          <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-4 sm:px-5">
+            <div className="min-w-0">
               <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
               {description && <p className="mt-0.5 text-[13px] text-muted">{description}</p>}
             </div>
             <IconButton icon={X} label="Close" onClick={onClose} size="sm" />
           </div>
         )}
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3.5">{footer}</div>}
+        <div className="max-h-[70vh] overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3.5 sm:px-5">{footer}</div>}
+      </div>
       </div>
     </div>,
     root,

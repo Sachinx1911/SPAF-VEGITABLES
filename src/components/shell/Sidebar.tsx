@@ -20,7 +20,7 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
         {!collapsed && (
           <div className="min-w-0">
             <p className="truncate text-[13.5px] font-bold tracking-tight text-white">SPAF</p>
-            <p className="truncate text-[10px] text-white/55">Operations OS</p>
+            <p className="truncate text-[10px] text-white/55">Fresh Produce for a Better Tomorrow</p>
           </div>
         )}
       </div>
@@ -54,6 +54,13 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
           </div>
         ))}
       </nav>
+
+      {!collapsed && (
+        <div className="mx-2.5 mb-2 rounded-lg bg-gradient-to-br from-fresh-600/30 to-brand-800 p-3">
+          <p className="text-[12px] font-semibold text-white">Good Food</p>
+          <p className="text-[12px] font-semibold text-white/80">Stronger Business</p>
+        </div>
+      )}
 
       <button
         onClick={() => setCollapsed(!collapsed)}
