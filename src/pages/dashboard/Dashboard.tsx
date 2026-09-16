@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import {
   AlertTriangle, ArrowDown, ArrowUp, Bell, Boxes, Check, ChevronRight, ClipboardCheck, ClipboardList, CreditCard,
   IndianRupee, Minus, Package, PackageOpen, ShoppingCart, Truck, Workflow, type LucideIcon,
@@ -10,14 +10,13 @@ import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { QuickAdd } from '../../components/shell/QuickAdd';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { todayISO, nowISO } from '../../lib/clock';
-import { addDays, fmtDate, fmtTime, inr, inrCompact, relativeTime } from '../../lib/format';
+import { addDays, fmtTime, inr, inrCompact, relativeTime } from '../../lib/format';
 import { liveStats, operationsTimeline, orderBoard, requirementRows, type StepState } from '../../domain/ops';
 import { salesByCustomer } from '../../domain/reports';
 import { deriveNotifications } from '../../domain/notifications';
 import { cn } from '../../lib/cn';
 
-const AXIS = { fontSize: 11, fill: '#8a968e' };
-const TOOLTIP = { fontSize: 12, borderRadius: 8, border: '1px solid #e3e8e4', boxShadow: '0 4px 12px rgba(16,40,26,0.1)' };
+const TOOLTIP ={ fontSize: 12, borderRadius: 8, border: '1px solid #e3e8e4', boxShadow: '0 4px 12px rgba(16,40,26,0.1)' };
 
 const ORDER_SLICES = [
   { key: 'Submitted', color: '#3b82f6' },
@@ -53,7 +52,6 @@ export function DashboardPage() {
   const today = todayISO();
   const now = nowISO();
 
-  const [trendDays, setTrendDays] = useState(7);
   const [finPeriod, setFinPeriod] = useState<'month' | 'last' | 'year'>('month');
 
   const stats = liveStats(db, today);
@@ -123,14 +121,6 @@ export function DashboardPage() {
   const netMargin = totalSales - totalPurchase;
 
   /* ----------------------------------------------------- charts and tables */
-
-  const trend = useMemo(() => {
-    const from = addDays(today, -(trendDays - 1));
-    return db.snapshots
-      .filter((s) => s.date >= from && s.date <= today)
-      .sort((a, b) => (a.date < b.date ? -1 : 1))
-      .map((s) => ({ date: fmtDate(s.date).slice(0, 5), orders: s.ordersReceived, deliveries: s.delivered }));
-  }, [db.snapshots, today, trendDays]);
 
   const topCustomers = useMemo(() => salesByCustomer(db, finRange.from, finRange.to).slice(0, 5), [db, finRange]);
   const topMax = topCustomers[0]?.amount ?? 1;
@@ -224,7 +214,7 @@ export function DashboardPage() {
 
       {/* ------------------------------ activity, trend chart, top customers */}
       <div className="grid gap-4 xl:grid-cols-12">
-        <Panel className="xl:col-span-5" title="Today's Activity" action={<LinkAll onClick={() => nav('/audit-logs')} />}>
+        <Panel className="xl:col-span-8" title="Today's Activity" action={<LinkAll onClick={() => nav('/audit-logs')} />}>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead className="bg-canvas/70">
@@ -254,38 +244,6 @@ export function DashboardPage() {
 
         <Panel
           className="xl:col-span-4"
-          title="Order vs Delivery Trend"
-          action={
-            <select
-              value={trendDays}
-              onChange={(e) => setTrendDays(Number(e.target.value))}
-              className="rounded-lg border border-line bg-white px-2 py-1 text-[11.5px] font-medium text-muted"
-            >
-              <option value={7}>Last 7 Days</option>
-              <option value={14}>Last 14 Days</option>
-              <option value={30}>Last 30 Days</option>
-            </select>
-          }
-        >
-          <div className="px-2 pt-3 pb-1">
-            <div className="mb-1 flex items-center justify-center gap-4 text-[11.5px] text-muted">
-              <Legend color="#2f7f50" label="Orders" />
-              <Legend color="#7bc47f" label="Deliveries" />
-            </div>
-            <ResponsiveContainer width="100%" height={188}>
-              <BarChart data={trend} barGap={3}>
-                <XAxis dataKey="date" tick={AXIS} axisLine={false} tickLine={false} />
-                <YAxis tick={AXIS} axisLine={false} tickLine={false} width={28} />
-                <Tooltip contentStyle={TOOLTIP} cursor={{ fill: 'rgba(47,127,80,0.06)' }} />
-                <Bar dataKey="orders" name="Orders" fill="#2f7f50" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="deliveries" name="Deliveries" fill="#7bc47f" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Panel>
-
-        <Panel
-          className="xl:col-span-3"
           title={<>Top Customers <span className="font-normal text-muted">({finRange.label})</span></>}
           action={<LinkAll onClick={() => nav('/reports/sales')} />}
         >
@@ -519,10 +477,6 @@ function MoneyRow({ label, value, strong }: { label: string; value: number; stro
       <p className={cn('tabular text-[13px] font-semibold', strong ? (value >= 0 ? 'text-emerald-600' : 'text-red-600') : 'text-ink')}>{inr(value)}</p>
     </div>
   );
-}
-
-function Legend({ color, label }: { color: string; label: string }) {
-  return <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: color }} />{label}</span>;
 }
 
 function Th({ children }: { children: React.ReactNode }) {
