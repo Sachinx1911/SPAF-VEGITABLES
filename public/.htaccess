@@ -1,0 +1,83 @@
+# SPAF — Operations OS · Apache configuration for cPanel shared hosting.
+# This file is copied into dist/ by the build and must sit next to index.html.
+
+# ---------------------------------------------------------------- HTTPS only
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Force HTTPS. On cPanel behind a proxy, X-Forwarded-Proto is the reliable signal.
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # The app routes with a hash (#/orders), so every real path is a file.
+  # Anything that is not an existing file falls back to index.html.
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# ------------------------------------------------------------ security headers
+<IfModule mod_headers.c>
+  # Tell browsers to use HTTPS for a year. Only takes effect over HTTPS.
+  # Add ; preload once the domain is confirmed HTTPS-only and submitted.
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+  # No MIME sniffing — a text file must never be executed as a script.
+  Header always set X-Content-Type-Options "nosniff"
+
+  # Refuse to be framed, so the UI cannot be used for clickjacking.
+  Header always set X-Frame-Options "DENY"
+
+  # Send the origin only, never the full path, to third parties.
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+  # The app needs no camera, microphone, geolocation or payment APIs.
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+
+  # Content Security Policy.
+  #   'unsafe-inline' on style-src is required by Tailwind's runtime styles and
+  #   the inline style attributes used for chart colours and bar widths.
+  #   img-src allows data: for uploaded photos and signature canvases.
+  #   No script sources other than this origin — no CDN, no inline script.
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+
+  # Never let a proxy or browser cache the entry document; hashed assets are immutable.
+  <FilesMatch "\.(html)$">
+    Header always set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.(js|css|woff2|png|jpg|svg)$">
+    Header always set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
+
+# ---------------------------------------------------------------- compression
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/javascript application/json image/svg+xml
+</IfModule>
+
+# ------------------------------------------------------------------ hardening
+# Never serve source maps, config or dependency manifests if they are uploaded by mistake.
+<FilesMatch "\.(map|lock|ts|tsx|md|yml|yaml)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Block dotfiles (.env, .git, this file itself).
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Do not advertise the directory listing.
+Options -Indexes

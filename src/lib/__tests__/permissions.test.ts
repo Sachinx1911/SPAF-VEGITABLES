@@ -34,7 +34,7 @@ describe('role permissions', () => {
   });
 
   it('stops a non-admin from editing users or settings', () => {
-    for (const role of ['ops_manager', 'order_exec', 'purchase_manager', 'warehouse', 'delivery_supervisor', 'accounts'] as const) {
+    for (const role of ['ops_manager', 'order_exec', 'purchase_manager', 'warehouse', 'delivery', 'accounts'] as const) {
       expect(can(db, role, 'users', 'edit'), `${role} must not edit users`).toBe(false);
       expect(can(db, role, 'settings', 'edit'), `${role} must not edit settings`).toBe(false);
     }
