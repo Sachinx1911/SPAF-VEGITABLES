@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   AlertTriangle, Boxes, ChevronRight, ClipboardList, Download, Ellipsis, History, Info, Package, PackageOpen,
@@ -248,8 +248,8 @@ export function AllocationPage() {
                   </thead>
                   <tbody>
                     {rows.map((r, i) => (
-                      <>
-                        <tr key={r.itemId} className="border-b border-line hover:bg-fresh-50/40">
+                      <Fragment key={r.itemId}>
+                        <tr className="border-b border-line hover:bg-fresh-50/40">
                           <td className="tabular px-2 py-2.5 text-center text-subtle">{i + 1}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <button onClick={() => setExpanded(expanded === r.itemId ? null : r.itemId)} className="text-left">
@@ -280,7 +280,7 @@ export function AllocationPage() {
                           </td>
                         </tr>
                         {expanded === r.itemId && (
-                          <tr key={`${r.itemId}-lines`} className="border-b border-line bg-canvas/40">
+                          <tr className="border-b border-line bg-canvas/40">
                             <td />
                             <td colSpan={9} className="px-3 py-2.5">
                               <div className="flex flex-col gap-1.5">
@@ -303,7 +303,7 @@ export function AllocationPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
