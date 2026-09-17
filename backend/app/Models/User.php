@@ -12,7 +12,20 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory;
 
-    protected $fillable = ['name', 'email', 'mobile', 'role_key', 'status', 'customer_id'];
+    /**
+     * `password` is fillable and cast as `hashed`, so a plain value assigned
+     * here is hashed on the way in and can never be stored as typed. Leaving it
+     * out silently drops it and the insert fails on a NOT NULL column.
+     */
+    protected $fillable = ['name', 'email', 'mobile', 'password', 'role_key', 'status', 'customer_id'];
+
+    /**
+     * A freshly created model carries only what was inserted, so a column left
+     * to its database default reads as null on that instance. Permission checks
+     * look at `status`, so it has to be present from the start rather than only
+     * after the row is read back.
+     */
+    protected $attributes = ['status' => 'Active'];
 
     /** Never serialised, and hashed on assignment. */
     protected $hidden = ['password', 'remember_token'];

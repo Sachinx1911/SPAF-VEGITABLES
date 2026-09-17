@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Route;
 use App\Models\User;
+use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
 use Tests\TestCase;
@@ -19,6 +20,13 @@ use Tests\TestCase;
 class QuantityChainTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // users.role_key is a foreign key, so the roles have to exist first.
+        $this->seed(RoleSeeder::class);
+    }
 
     private function line(float $ordered = 10): OrderItem
     {

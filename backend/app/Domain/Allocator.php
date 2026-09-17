@@ -61,6 +61,9 @@ class Allocator
         $available = $this->available($deliveryDate, $itemId);
 
         // Route order, because that is the sequence the van loads and delivers in.
+        // Lines already packed are left alone: their crate is filled and the
+        // challan may be issued, so re-planning them would contradict the floor
+        // and would orphan the packing rows that point at their allocation.
         $lines = OrderItem::query()
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
             ->join('customers', 'customers.id', '=', 'orders.customer_id')
@@ -68,6 +71,7 @@ class Allocator
             ->whereIn('orders.status', ['Approved', 'Locked'])
             ->where('order_items.item_id', $itemId)
             ->whereNotNull('order_items.qty_approved')
+            ->whereNull('order_items.qty_packed')
             ->orderBy('customers.route_order')
             ->select('order_items.*', 'orders.customer_id as cust_id')
             ->get();
@@ -81,25 +85,31 @@ class Allocator
 
         // Weighed goods are cut to the half kilo; countable goods to the piece.
         $step = $item->unit === 'Kg' ? 0.5 : 1.0;
-        $round = fn (float $v) => round($v / $step) * $step;
+        $round = fn (float $v) => round($v / $step, 3) * $step;
+
+        // Each share is rounded DOWN to a whole step. Rounding to nearest would
+        // let several lines round up at once and promise more than arrived —
+        // which on the floor means the last stop on the route opens an empty
+        // crate. Everything held back by the rounding is given out below.
+        $floor = fn (float $v) => floor(round($v / $step, 6)) * $step;
 
         $plan = [];
         $allocatedSum = 0.0;
         foreach ($lines as $line) {
             $required = (float) $line->qty_approved;
-            $qty = $override ? $required : max(0.0, min($required, $round($required * $ratio)));
+            $qty = $override ? $required : max(0.0, min($required, $floor($required * $ratio)));
             $plan[] = ['line' => $line, 'required' => $required, 'qty' => $qty];
             $allocatedSum += $qty;
         }
 
-        // Rounding down leaves a remainder. It goes to the front of the route
-        // rather than being thrown away, and never past a line's requirement.
-        $spare = $round($available - $allocatedSum);
+        // Hand the remainder out one step at a time, down the route in delivery
+        // order, never past a line's requirement and never past what arrived.
+        $spare = $override ? 0.0 : $floor($available - $allocatedSum);
         foreach ($plan as &$p) {
             if ($spare < $step) {
                 break;
             }
-            if ($p['qty'] < $p['required']) {
+            if ($p['qty'] + $step <= $p['required']) {
                 $p['qty'] = $round($p['qty'] + $step);
                 $spare = $round($spare - $step);
             }
@@ -107,8 +117,6 @@ class Allocator
         unset($p);
 
         DB::transaction(function () use ($plan, $deliveryDate, $itemId, $item, $user, $override) {
-            Allocation::whereDate('delivery_date', $deliveryDate)->where('item_id', $itemId)->delete();
-
             foreach ($plan as $p) {
                 /** @var OrderItem $line */
                 $line = $p['line'];
@@ -118,19 +126,25 @@ class Allocator
                 $line->resetStage('allocated');
                 $line->recordStage('allocated', $p['qty']);
 
-                Allocation::create([
-                    'order_item_id' => $line->id,
-                    'order_id' => $line->order_id,
-                    'customer_id' => $line->cust_id,
-                    'item_id' => $itemId,
-                    'unit' => $item->unit,
-                    'delivery_date' => $deliveryDate,
-                    'required_qty' => $p['required'],
-                    'allocated_qty' => $p['qty'],
-                    'override' => $override,
-                    'allocated_by' => $user->id,
-                    'allocated_at' => now(),
-                ]);
+                // Updated in place rather than deleted and recreated: once the
+                // packing sheet is open its rows point at this allocation, and
+                // replacing the row would break that link. One allocation per
+                // order line is enforced by a unique key.
+                Allocation::updateOrCreate(
+                    ['order_item_id' => $line->id],
+                    [
+                        'order_id' => $line->order_id,
+                        'customer_id' => $line->cust_id,
+                        'item_id' => $itemId,
+                        'unit' => $item->unit,
+                        'delivery_date' => $deliveryDate,
+                        'required_qty' => $p['required'],
+                        'allocated_qty' => $p['qty'],
+                        'override' => $override,
+                        'allocated_by' => $user->id,
+                        'allocated_at' => now(),
+                    ],
+                );
             }
         });
 

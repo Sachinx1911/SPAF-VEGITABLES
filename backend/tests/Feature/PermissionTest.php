@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\Order;
 use App\Models\Route;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
@@ -89,11 +90,23 @@ class PermissionTest extends TestCase
 
     public function test_an_order_executive_cannot_approve_an_order(): void
     {
-        $this->actingAsRole('order_exec');
+        $user = $this->actingAsRole('order_exec');
 
-        // Route exists and the role may view orders, but not approve them.
+        // A real order, so the refusal is about permission and not a missing row.
+        $route = Route::create(['code' => 'R9', 'name' => 'R9', 'departure_time' => '07:00']);
+        $customer = Customer::create([
+            'code' => 'SPC-009', 'name' => 'Kitchen', 'type' => 'Restaurant',
+            'route_id' => $route->id, 'route_order' => 1,
+        ]);
+        $order = Order::create([
+            'order_no' => 'SO-PERM-0001', 'customer_id' => $customer->id,
+            'order_date' => now()->toDateString(), 'delivery_date' => now()->addDay()->toDateString(),
+            'received_at' => now(), 'created_by' => $user->id,
+        ]);
+
+        // They may capture and edit orders, but approving is not theirs.
         $this->getJson('/api/orders')->assertOk();
-        $this->postJson('/api/orders/1/approve')->assertStatus(403);
+        $this->postJson("/api/orders/{$order->id}/approve")->assertStatus(403);
     }
 
     public function test_only_ops_can_lock_the_day(): void

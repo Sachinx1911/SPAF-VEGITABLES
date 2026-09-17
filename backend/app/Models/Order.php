@@ -10,9 +10,18 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Order extends Model
 {
+    /**
+     * The workflow columns are fillable because every step of the day writes
+     * one: approval stamps who and when, packing and dispatch move the status
+     * along, invoicing closes it. They are set by controllers from known values,
+     * never from request input. Leaving them out makes those updates fail
+     * silently — the row saves, the column does not change, and nothing errors.
+     */
     protected $fillable = [
         'order_no', 'customer_id', 'order_date', 'delivery_date', 'order_type', 'source',
         'status', 'is_late', 'received_at', 'repeat_of_order_id', 'remarks', 'created_by',
+        'approved_by', 'approved_at', 'locked_at',
+        'packing_status', 'delivery_status', 'invoice_status',
     ];
 
     protected function casts(): array
@@ -45,6 +54,12 @@ class Order extends Model
     public function challan(): HasOne
     {
         return $this->hasOne(Challan::class);
+    }
+
+    /** One invoice per order — the guard against billing the same day twice. */
+    public function invoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class);
     }
 
     public function approver(): BelongsTo

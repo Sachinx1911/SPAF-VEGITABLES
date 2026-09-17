@@ -3,10 +3,11 @@
 The server side of SPAF — Operations OS: MySQL schema, authentication,
 permissions, and the API the front end will read from.
 
-**Code complete, not yet executed.** Every module named in `routes/api.php`
-now has a controller behind it. Nothing has run against a real database yet —
-the first `php artisan migrate` on the server is the real test. See
-"What is not here".
+**Installed and exercised.** Run against Laravel 13 on a real database:
+migrations, seeders, the 37-test suite, and a full day walked end to end
+through the HTTP API — order, approve, consolidate, lock, purchase, receive,
+quality check, allocate, pack, challan, dispatch, deliver short, invoice and
+settle. Nine bugs surfaced doing it; all are fixed. See "What is not here".
 
 ---
 
@@ -37,7 +38,7 @@ Moving those to a server is the entire point of this folder.
 | `app/Domain/Allocator.php` | The proportional shortage split, ported from the tested TypeScript |
 | `app/Console/Commands/WriteDailySnapshot.php` | The cron job behind the dashboard's day-on-day figures |
 | `tests/Feature/` (4) | Quantity chain, permissions, finance, allocation |
-| `app/Http/Middleware/CheckPermission.php` | Server-side `can:<module>,<action>` on every route |
+| `app/Http/Middleware/CheckPermission.php` | Server-side `perm:<module>,<action>` on every route |
 | `app/Http/Middleware/ScopeToCustomer.php` | A portal token can only ever read its own customer's rows |
 | `app/Support/helpers.php` | `activity_log()` and `setting()` |
 | `routes/api.php` | 80 endpoints, each carrying its permission |
@@ -61,21 +62,38 @@ minute later.
 
 ---
 
+## What the first real run found
+
+Static checks had passed on all of this. Running it found nine faults that only
+appear against a live database:
+
+| Fault | Why it mattered |
+|---|---|
+| `can` middleware alias collided with Laravel's own | Every guarded route returned 403 without `CheckPermission` ever running — and the negative permission tests passed for the wrong reason. Renamed to `perm`. |
+| Allocation handed out more than arrived | Rounding each share to the nearest step let several lines round up together: 26 kg available was allocated as 26.5. Shares now round down and the remainder is given out one step at a time down the route. |
+| `resetStage()` silently did nothing | It used `update()`, and the quantity columns are deliberately not fillable, so re-allocating a line threw instead of re-planning it. |
+| Order workflow updates silently dropped | `approved_by`, `approved_at`, `locked_at` and the three status columns were missing from `$fillable`, so approval never recorded who, and packing, dispatch and invoicing never moved the order's status. |
+| `password` missing from `$fillable` | Creating a user through the API failed on a NOT NULL column. |
+| Three relationships referenced but never defined | `Order::invoice`, `ChallanItem::orderItem`, `InvoiceItem::orderItem` — dispatch, invoicing and settlement all hit them. |
+| Packing held a stale allocated quantity | The sheet snapshotted the allocation when first opened, so stock arriving later never reached the floor. Unpacked lines now follow the current allocation. |
+| Re-allocating broke a foreign key | Allocations are updated in place rather than deleted, because packing rows point at them. |
+| `users.email_verified_at` missing | Laravel's own factory and auth scaffolding expect it. |
+
+Two `.env` notes: a value containing a space needs quoting (`ADMIN_NAME="Your Name"`),
+and Sanctum's migration has to be published before the first `migrate`.
+
+---
+
 ## What is not here
 
-**None of it has run yet.** It is written and statically verified — every file
-passes `php -l`, every route resolves to a method that exists, and every model
-column matches the migration — but no `composer install`, no `artisan migrate`,
-no test run. Expect to fix things on the first install; that is normal and the
-tests exist to catch it.
-
-Still genuinely missing:
-
-- **An importer** for the existing customer and item masters. Until then the
-  database starts empty and masters go in through the UI or by SQL.
+- **An importer** for the existing customer and item masters. The database
+  starts empty; masters go in through the UI, the CSV import, or by SQL.
 - **PDF rendering** for challans and invoices. The data is all there; only the
-  printable output is not.
-- **Notifications** — the front end derives them; the server does not push any.
+  printable output is missing.
+- **Notifications** — the front end derives them; the server pushes none.
+- **The front end still talks to its own browser store.** Wiring it to this API
+  is the next piece of work, and until it happens the two halves hold separate
+  data.
 
 ---
 
@@ -107,7 +125,8 @@ install, then register the middleware in `bootstrap/app.php`:
 ```php
 ->withMiddleware(function (Middleware $middleware) {
     $middleware->alias([
-        'can' => App\Http\Middleware\CheckPermission::class,
+        // Not 'can' — Laravel already uses that alias for gate authorisation.
+        'perm' => App\Http\Middleware\CheckPermission::class,
         'scope.customer' => App\Http\Middleware\ScopeToCustomer::class,
     ]);
 })
@@ -140,7 +159,7 @@ DB_USERNAME=uXXXXXXX_spaf
 DB_PASSWORD=…
 
 ADMIN_EMAIL=you@yourdomain.com
-ADMIN_NAME=Your Name
+ADMIN_NAME="Your Name"
 
 SESSION_SECURE_COOKIE=true
 SANCTUM_STATEFUL_DOMAINS=yourdomain.com

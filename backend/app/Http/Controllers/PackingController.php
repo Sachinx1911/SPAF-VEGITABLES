@@ -81,17 +81,23 @@ class PackingController extends Controller
         $allocated = $order->lines->whereNotNull('qty_allocated');
 
         foreach ($allocated as $line) {
-            PackingItem::firstOrCreate(
+            $row = PackingItem::firstOrNew(
                 ['packing_id' => $packing->id, 'order_item_id' => $line->id],
-                [
+            );
+
+            // A line that is not packed yet follows the current allocation:
+            // stock can arrive or be re-split after the sheet is first opened,
+            // and the floor must weigh out what is set aside now, not what was
+            // set aside when somebody happened to open the screen.
+            if ($row->packed_qty === null) {
+                $row->fill([
                     'allocation_id' => $line->allocation?->id,
                     'item_id' => $line->item_id,
                     'unit' => $line->unit,
                     'allocated_qty' => $line->qty_allocated,
-                    'packed_qty' => null,
-                    'package_type' => 'Crate',
-                ],
-            );
+                    'package_type' => $row->package_type ?? 'Crate',
+                ])->save();
+            }
         }
 
         $packing->load('lines.item:id,name,unit,category');

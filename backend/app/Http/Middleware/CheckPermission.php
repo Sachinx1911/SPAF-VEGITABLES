@@ -14,7 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
  * travelled to the browser. This refuses the request instead, so a role that
  * cannot view a module cannot read it by calling the endpoint directly.
  *
- * Registered as `can` — used in routes as `can:orders,approve`.
+ * Registered as `perm` — used in routes as `perm:orders,approve`.
+ *
+ * Not `can`: Laravel already ships that alias for gate authorisation, and the
+ * collision makes every guarded route return 403 without this ever running.
  */
 class CheckPermission
 {

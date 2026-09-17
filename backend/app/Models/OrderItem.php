@@ -88,14 +88,23 @@ class OrderItem extends Model
         $this->save();
     }
 
-    /** Clears a stage so it can be recorded again — for corrections only, and audited by the caller. */
+    /**
+     * Clears a stage so it can be recorded again — for corrections only, and
+     * audited by the caller.
+     *
+     * Assigned directly rather than through update(), because the quantity
+     * columns are deliberately kept out of $fillable: mass assignment would
+     * silently drop them, leaving the stage set and the next recordStage()
+     * refusing to write.
+     */
     public function resetStage(string $stage): void
     {
         if (! in_array($stage, self::STAGES, true) || $stage === 'ordered') {
             throw new RuntimeException("Stage {$stage} cannot be reset.");
         }
 
-        $this->update(["qty_{$stage}" => null]);
+        $this->{"qty_{$stage}"} = null;
+        $this->save();
     }
 
     /** The last stage that carries a value — how far down the chain this line has travelled. */

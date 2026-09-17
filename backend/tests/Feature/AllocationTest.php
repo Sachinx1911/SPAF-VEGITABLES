@@ -61,10 +61,16 @@ class AllocationTest extends TestCase
             'status' => 'Locked', 'received_at' => now(), 'created_by' => $this->user->id,
         ]);
 
-        return OrderItem::create([
+        $line = OrderItem::create([
             'order_id' => $order->id, 'item_id' => $this->item->id, 'unit' => 'Kg',
-            'rate' => 40, 'qty_ordered' => $approved, 'qty_approved' => $approved,
+            'rate' => 40, 'qty_ordered' => $approved,
         ]);
+
+        // Stages are not mass assignable by design — recordStage is the only
+        // way in, which is what stops a stray create() from rewriting history.
+        $line->recordStage('approved', $approved);
+
+        return $line;
     }
 
     private function stockOnHand(float $qty): void
@@ -150,6 +156,44 @@ class AllocationTest extends TestCase
             $qty = (float) $line->fresh()->qty_allocated;
             $this->assertSame(0.0, fmod($qty * 10, 5.0), "{$qty} is not a half-kilo step");
         }
+    }
+
+    /**
+     * Regression: with a ratio that does not divide evenly, rounding each share
+     * to the NEAREST step let several lines round up at once and promised more
+     * than arrived. 26 kg was handed out as 26.5.
+     */
+    public function test_a_ratio_that_rounds_badly_still_never_exceeds_what_arrived(): void
+    {
+        $a = $this->demand('First', 1, 10);
+        $b = $this->demand('Second', 2, 9);
+        $c = $this->demand('Third', 3, 25);
+        $this->stockOnHand(26);   // against 44 required
+
+        app(Allocator::class)->allocateItem($this->date, $this->item->id, $this->user);
+
+        $total = (float) $a->fresh()->qty_allocated
+            + (float) $b->fresh()->qty_allocated
+            + (float) $c->fresh()->qty_allocated;
+
+        $this->assertLessThanOrEqual(26.0, $total, "handed out {$total} of 26 available");
+        // And the remainder is not simply discarded.
+        $this->assertGreaterThanOrEqual(25.0, $total);
+    }
+
+    public function test_the_rounding_remainder_goes_down_the_route_in_order(): void
+    {
+        $a = $this->demand('First', 1, 10);
+        $b = $this->demand('Second', 2, 10);
+        $this->stockOnHand(13);   // 6.5 each exactly, nothing spare
+
+        app(Allocator::class)->allocateItem($this->date, $this->item->id, $this->user);
+
+        // The earlier stop is never worse off than the later one.
+        $this->assertGreaterThanOrEqual(
+            (float) $b->fresh()->qty_allocated,
+            (float) $a->fresh()->qty_allocated,
+        );
     }
 
     public function test_re_running_allocation_replaces_rather_than_accumulates(): void

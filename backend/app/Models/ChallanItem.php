@@ -20,4 +20,10 @@ class ChallanItem extends Model
     {
         return $this->belongsTo(Item::class);
     }
+
+    /** Dispatch and delivery write their stages back through this link. */
+    public function orderItem(): BelongsTo
+    {
+        return $this->belongsTo(OrderItem::class);
+    }
 }

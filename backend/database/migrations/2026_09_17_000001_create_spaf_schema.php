@@ -83,6 +83,8 @@ return new class extends Migration
             $t->id();
             $t->string('name');
             $t->string('email')->unique();
+            // Laravel's own auth scaffolding and factories expect this column.
+            $t->timestamp('email_verified_at')->nullable();
             $t->string('mobile', 20)->default('');
             // Bcrypt/Argon hash. Never a plain or shared password — that was the
             // prototype's single biggest hole.

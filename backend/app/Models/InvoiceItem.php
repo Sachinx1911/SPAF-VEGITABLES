@@ -20,4 +20,10 @@ class InvoiceItem extends Model
     {
         return $this->belongsTo(Item::class);
     }
+
+    /** Settling an invoice writes the paid stage back through this link. */
+    public function orderItem(): BelongsTo
+    {
+        return $this->belongsTo(OrderItem::class);
+    }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Route;
 use App\Models\User;
@@ -39,10 +40,20 @@ class FinanceTest extends TestCase
 
     private function invoice(float $total, string $invoiceDate, string $dueDate): Invoice
     {
+        // Every invoice bills an order; there is no free-standing invoice.
+        $order = Order::create([
+            'order_no' => 'SO-' . uniqid(),
+            'customer_id' => $this->customer->id,
+            'order_date' => $invoiceDate,
+            'delivery_date' => $invoiceDate,
+            'received_at' => now(),
+            'created_by' => $this->accounts->id,
+        ]);
+
         return Invoice::create([
             'invoice_no' => 'INV-' . uniqid(),
             'customer_id' => $this->customer->id,
-            'order_id' => null,
+            'order_id' => $order->id,
             'invoice_date' => $invoiceDate,
             'due_date' => $dueDate,
             'subtotal' => $total,
