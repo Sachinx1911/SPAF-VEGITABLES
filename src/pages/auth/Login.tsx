@@ -105,17 +105,20 @@ export function LoginPage() {
           </form>
 
           <div className="mt-3 flex items-center justify-center gap-1.5 text-[11.5px] text-muted">
-            <ShieldCheck size={13} className="text-emerald-600" /> Secure login · session encrypted
+            <ShieldCheck size={13} className="text-emerald-600" /> Signed in sessions are role-restricted
           </div>
 
-          <div className="mt-7 border-t border-line pt-5">
-            <p className="mb-2.5 text-center text-[11.5px] font-medium tracking-wide text-subtle uppercase">Demo access</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" icon={UserRound} onClick={() => demoLogin('u_ops')}>Staff demo</Button>
-              <Button variant="secondary" icon={Store} onClick={() => demoLogin('u_cust_terrace')}>Customer demo</Button>
+          {/* Sign-in without a password — dev builds only, never shipped. */}
+          {import.meta.env.DEV && (
+            <div className="mt-7 border-t border-line pt-5">
+              <p className="mb-2.5 text-center text-[11.5px] font-medium tracking-wide text-subtle uppercase">Demo access</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="secondary" icon={UserRound} onClick={() => demoLogin('u_ops')}>Staff demo</Button>
+                <Button variant="secondary" icon={Store} onClick={() => demoLogin('u_cust_terrace')}>Customer demo</Button>
+              </div>
+              <p className="mt-2 text-center text-[11px] text-subtle">Demo password for any account: <code className="rounded bg-canvas px-1 py-0.5">{DEMO_PASSWORD}</code></p>
             </div>
-            <p className="mt-2 text-center text-[11px] text-subtle">Demo password for any account: <code className="rounded bg-canvas px-1 py-0.5">{DEMO_PASSWORD}</code></p>
-          </div>
+          )}
         </div>
       </div>
     </div>

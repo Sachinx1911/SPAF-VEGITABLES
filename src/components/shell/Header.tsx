@@ -17,7 +17,6 @@ import { homePathFor } from '../../lib/nav';
 export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const user = useCurrentUser();
   const logout = useStore((s) => s.logout);
-  const loginAs = useStore((s) => s.loginAs);
   const resetDemo = useStore((s) => s.resetDemo);
   const db = useStore((s) => s.db);
   const nav = useNavigate();
@@ -71,11 +70,14 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           items={[
             { key: 'settings', label: 'Settings', icon: <Settings size={14} />, onClick: () => nav('/settings') },
             { key: 'divider', label: '', divider: true },
-            ...(user?.role !== 'admin'
-              ? [{ key: 'admin-demo', label: 'Switch to Admin (demo)', icon: <UserRound size={14} />, onClick: () => { loginAs('u_admin'); nav('/'); } }]
+            // Identity switching hands out any role without a password, so it
+            // exists only in dev builds and only for an admin.
+            ...(import.meta.env.DEV && user?.role === 'admin'
+              ? [
+                  { key: 'roles', label: 'Switch demo role…', icon: <UserRound size={14} />, onClick: () => nav('/switch-role') },
+                  { key: 'reset', label: 'Reset demo data', icon: <RotateCcw size={14} />, onClick: doReset },
+                ]
               : []),
-            { key: 'roles', label: 'Switch demo role…', icon: <UserRound size={14} />, onClick: () => nav('/switch-role') },
-            { key: 'reset', label: 'Reset demo data', icon: <RotateCcw size={14} />, onClick: doReset },
             { key: 'divider2', label: '', divider: true },
             { key: 'logout', label: 'Sign out', icon: <LogOut size={14} />, danger: true, onClick: () => { logout(); nav('/login'); } },
           ]}

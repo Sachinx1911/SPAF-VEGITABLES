@@ -20,3 +20,15 @@ export function RequireModule({ module, action = 'view', children }: { module: M
   if (!can(db, user.role, module, action)) return <PermissionDeniedPage />;
   return <>{children}</>;
 }
+
+/**
+ * Prototype-only screens (role switcher, design system). These hand out any
+ * identity without a password, so they must never ship: they are compiled out
+ * of a production build, and even in dev only an admin may open them.
+ */
+export function RequireDemoTools({ children }: { children: ReactNode }) {
+  const user = useCurrentUser();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!import.meta.env.DEV || user.role !== 'admin') return <PermissionDeniedPage />;
+  return <>{children}</>;
+}
