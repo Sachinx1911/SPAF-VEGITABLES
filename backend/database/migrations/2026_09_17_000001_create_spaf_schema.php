@@ -459,7 +459,9 @@ return new class extends Migration
         Schema::create('audit_logs', function (Blueprint $t) {
             $t->id();
             $t->timestamp('at');
-            $t->foreignId('user_id')->constrained()->restrictOnDelete();
+            // Nullable: a failed login has no authenticated user yet, and that
+            // attempt is exactly the kind of thing the trail must record.
+            $t->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $t->string('action');
             $t->string('module', 40);
             $t->string('record_ref', 60)->default('');
