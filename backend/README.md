@@ -3,8 +3,10 @@
 The server side of SPAF — Operations OS: MySQL schema, authentication,
 permissions, and the API the front end will read from.
 
-**Partly built.** Auth, orders and consolidation work; the rest of the modules
-are mapped but not written. See "What is not here".
+**Code complete, not yet executed.** Every module named in `routes/api.php`
+now has a controller behind it. Nothing has run against a real database yet —
+the first `php artisan migrate` on the server is the real test. See
+"What is not here".
 
 ---
 
@@ -31,13 +33,14 @@ Moving those to a server is the entire point of this folder.
 | `app/Models/` (31 files) | Every table, with relationships, casts, and the rules that belong on the record |
 | `database/seeders/RoleSeeder.php` | The full permission matrix — the same grid the UI renders and the API enforces |
 | `database/seeders/DatabaseSeeder.php` | Roles, settings, and one admin with a generated password |
-| `app/Http/Controllers/AuthController.php` | Login, logout, me, change password — rate limited, timing-safe, audited |
-| `app/Http/Controllers/OrderController.php` | List, show, create, amend, approve, reject |
-| `app/Http/Controllers/ConsolidationController.php` | Day matrix, item-quantity sheet, and the lock |
+| `app/Http/Controllers/` (18) | Auth, orders, consolidation, purchase, receiving, quality check, allocation, packing, challan, driver, invoice, payment, outstanding, ledger, masters, portal, reports, admin |
+| `app/Domain/Allocator.php` | The proportional shortage split, ported from the tested TypeScript |
+| `app/Console/Commands/WriteDailySnapshot.php` | The cron job behind the dashboard's day-on-day figures |
+| `tests/Feature/` (4) | Quantity chain, permissions, finance, allocation |
 | `app/Http/Middleware/CheckPermission.php` | Server-side `can:<module>,<action>` on every route |
 | `app/Http/Middleware/ScopeToCustomer.php` | A portal token can only ever read its own customer's rows |
 | `app/Support/helpers.php` | `activity_log()` and `setting()` |
-| `routes/api.php` | The complete endpoint map, each route already carrying its permission |
+| `routes/api.php` | 80 endpoints, each carrying its permission |
 
 ### The two rules, enforced in code
 
@@ -60,23 +63,19 @@ minute later.
 
 ## What is not here
 
-Named in `routes/api.php`, not yet written:
+**None of it has run yet.** It is written and statically verified — every file
+passes `php -l`, every route resolves to a method that exists, and every model
+column matches the migration — but no `composer install`, no `artisan migrate`,
+no test run. Expect to fix things on the first install; that is normal and the
+tests exist to catch it.
 
-- **Controllers** — purchase, receiving, quality check, allocation, packing,
-  challan, driver, invoice, payment, outstanding, ledger, reports, analytics,
-  users, roles, settings, portal.
-- **The domain logic those controllers need** — proportional allocation,
-  challan generation from packing, invoice-from-delivered-quantity, aging, and
-  the running ledger balance. These exist as tested pure functions in
-  `src/domain/*.ts` and must be ported, keeping the same behaviour.
-- **Server-side tests.** The front end has 86; the backend has none yet.
-- **The scheduled job** that writes `daily_snapshots`.
-- **File storage** for signatures, QC photos and delivery photos.
-- **An importer** for the existing customer and item masters.
+Still genuinely missing:
 
-Rough order to build: purchase/receiving/QC → allocation/packing/challan →
-finance → reports. Each slice can go live on its own, because the front end can
-read one module from the API while the rest still come from the local store.
+- **An importer** for the existing customer and item masters. Until then the
+  database starts empty and masters go in through the UI or by SQL.
+- **PDF rendering** for challans and invoices. The data is all there; only the
+  printable output is not.
+- **Notifications** — the front end derives them; the server does not push any.
 
 ---
 

@@ -1,161 +1,186 @@
 <?php
 
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AllocationController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ChallanController;
+use App\Http\Controllers\ConsolidationController;
+use App\Http\Controllers\DriverController;
+use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\LedgerController;
+use App\Http\Controllers\MasterController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OutstandingController;
+use App\Http\Controllers\PackingController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PortalController;
+use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\QualityCheckController;
+use App\Http\Controllers\ReceivingController;
+use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
 
 /**
- * SPAF — Operations OS · API surface.
+ * SPAF — Operations OS · API.
  *
- * Every route here is the server-side counterpart of a screen that today reads
- * the browser store directly. Two rules the front end cannot enforce on its own
- * and which therefore belong here:
+ * Two rules the front end cannot enforce on its own, and which therefore live
+ * here on every route:
  *
- *  - Permission is checked on the server for every request, not just in the UI.
- *    `can:<module>,<action>` maps to the same role/permission matrix the front
- *    end renders, so hiding a button and refusing the call stay in step.
- *
- *  - A customer-role token may only ever see its own rows. `scope.customer`
- *    applies that filter in the query, so a tampered request cannot widen it.
+ *  - `can:<module>,<action>` checks the same role matrix the UI renders, so
+ *    hiding a button and refusing the call stay in step.
+ *  - `scope.customer` binds a portal token to its own customer, so a tampered
+ *    request cannot widen what it sees.
  */
 
 // ------------------------------------------------------------------ public
-Route::post('/auth/login', 'AuthController@login')->middleware('throttle:5,1');
-Route::post('/auth/forgot-password', 'AuthController@forgot')->middleware('throttle:3,10');
-Route::post('/auth/reset-password', 'AuthController@reset')->middleware('throttle:5,10');
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
 // --------------------------------------------------------------- protected
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/auth/logout', 'AuthController@logout');
-    Route::get('/auth/me', 'AuthController@me');
-    Route::post('/auth/change-password', 'AuthController@changePassword');
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
 
-    // ---------------------------------------------------------- masters
+    /* ---------------------------------------------------------- masters */
     Route::middleware('can:customers,view')->group(function () {
-        Route::get('/customers', 'CustomerController@index');
-        Route::get('/customers/{customer}', 'CustomerController@show');
+        Route::get('/customers', [MasterController::class, 'customers']);
+        Route::get('/customers/{customer}', [MasterController::class, 'showCustomer']);
     });
-    Route::post('/customers', 'CustomerController@store')->middleware('can:customers,create');
-    Route::put('/customers/{customer}', 'CustomerController@update')->middleware('can:customers,edit');
+    Route::post('/customers', [MasterController::class, 'storeCustomer'])->middleware('can:customers,create');
+    Route::put('/customers/{customer}', [MasterController::class, 'updateCustomer'])->middleware('can:customers,edit');
 
-    Route::middleware('can:items,view')->group(function () {
-        Route::get('/items', 'ItemController@index');
-        Route::get('/items/{item}', 'ItemController@show');
-    });
-    Route::post('/items', 'ItemController@store')->middleware('can:items,create');
-    Route::put('/items/{item}', 'ItemController@update')->middleware('can:items,edit');
+    Route::get('/items', [MasterController::class, 'items'])->middleware('can:items,view');
+    Route::post('/items', [MasterController::class, 'storeItem'])->middleware('can:items,create');
+    Route::put('/items/{item}', [MasterController::class, 'updateItem'])->middleware('can:items,edit');
+    Route::get('/stock', [MasterController::class, 'stock'])->middleware('can:stock,view');
 
-    Route::get('/prices', 'PriceController@index')->middleware('can:prices,view');
-    Route::post('/prices', 'PriceController@store')->middleware('can:prices,edit');
-    Route::get('/stock', 'StockController@index')->middleware('can:stock,view');
+    Route::get('/prices', [MasterController::class, 'prices'])->middleware('can:prices,view');
+    Route::post('/prices', [MasterController::class, 'setPrice'])->middleware('can:prices,edit');
 
-    // ----------------------------------------------------------- orders
+    Route::get('/routes', [MasterController::class, 'routes']);
+    Route::get('/suppliers', [MasterController::class, 'suppliers'])->middleware('can:purchase,view');
+
+    /* ----------------------------------------------------------- orders */
     Route::middleware('can:orders,view')->group(function () {
-        Route::get('/orders', 'OrderController@index');          // ?delivery_date=&status=&customer_id=
-        Route::get('/orders/{order}', 'OrderController@show');   // includes the full quantity chain
+        Route::get('/orders', [OrderController::class, 'index']);
+        Route::get('/orders/{order}', [OrderController::class, 'show']);
     });
-    Route::post('/orders', 'OrderController@store')->middleware('can:orders,create');
-    Route::put('/orders/{order}', 'OrderController@update')->middleware('can:orders,edit');
-    // Approval fills qty_approved only. The server rejects any attempt to write
-    // qty_ordered on this route — that is what keeps the chain intact.
-    Route::post('/orders/{order}/approve', 'OrderController@approve')->middleware('can:orders,approve');
-    Route::post('/orders/{order}/reject', 'OrderController@reject')->middleware('can:orders,approve');
+    Route::post('/orders', [OrderController::class, 'store'])->middleware('can:orders,create');
+    Route::put('/orders/{order}', [OrderController::class, 'update'])->middleware('can:orders,edit');
+    // Fills qty_approved only; the server refuses to touch qty_ordered.
+    Route::post('/orders/{order}/approve', [OrderController::class, 'approve'])->middleware('can:orders,approve');
+    Route::post('/orders/{order}/reject', [OrderController::class, 'reject'])->middleware('can:orders,approve');
 
-    // ---------------------------------------------------- consolidation
+    /* ---------------------------------------------------- consolidation */
     Route::middleware('can:consolidation,view')->group(function () {
-        Route::get('/consolidation', 'ConsolidationController@matrix');       // ?delivery_date=
-        Route::get('/consolidation/item-quantity', 'ConsolidationController@itemQuantity');
+        Route::get('/consolidation', [ConsolidationController::class, 'matrix']);
+        Route::get('/consolidation/item-quantity', [ConsolidationController::class, 'itemQuantity']);
     });
-    // Locking the day is one transaction: freeze the orders and write the
-    // purchase requirement snapshot together, or neither.
-    Route::post('/consolidation/lock', 'ConsolidationController@lock')->middleware('can:consolidation,approve');
+    // Freezing the day and writing the requirement is one transaction.
+    Route::post('/consolidation/lock', [ConsolidationController::class, 'lock'])->middleware('can:consolidation,approve');
 
-    // --------------------------------------------------------- purchase
-    Route::get('/purchase/requirements', 'PurchaseController@requirements')->middleware('can:purchase,view');
-    Route::get('/purchase/orders', 'PurchaseController@index')->middleware('can:purchase,view');
-    Route::post('/purchase/orders', 'PurchaseController@store')->middleware('can:purchase,create');
+    /* --------------------------------------------------------- purchase */
+    Route::middleware('can:purchase,view')->group(function () {
+        Route::get('/purchase/requirements', [PurchaseController::class, 'requirements']);
+        Route::get('/purchase/orders', [PurchaseController::class, 'index']);
+        Route::get('/purchase/orders/{purchaseOrder}', [PurchaseController::class, 'show']);
+    });
+    Route::post('/purchase/orders', [PurchaseController::class, 'store'])->middleware('can:purchase,create');
 
-    Route::get('/receivings', 'ReceivingController@index')->middleware('can:receiving,view');
-    Route::post('/receivings', 'ReceivingController@store')->middleware('can:receiving,create');
-    Route::get('/quality-checks', 'QualityCheckController@index')->middleware('can:receiving,view');
-    // Recording QC is the only thing that credits stock, and only the accepted qty.
-    Route::post('/quality-checks', 'QualityCheckController@store')->middleware('can:receiving,edit');
+    Route::middleware('can:receiving,view')->group(function () {
+        Route::get('/receivings', [ReceivingController::class, 'index']);
+        Route::get('/receivings/{receiving}', [ReceivingController::class, 'show']);
+        Route::get('/quality-checks', [QualityCheckController::class, 'index']);
+    });
+    Route::post('/receivings', [ReceivingController::class, 'store'])->middleware('can:receiving,create');
+    // The only thing that credits stock, and only with the accepted quantity.
+    Route::post('/quality-checks', [QualityCheckController::class, 'store'])->middleware('can:receiving,edit');
 
-    // ------------------------------------------------------- fulfilment
-    Route::get('/allocations', 'AllocationController@index')->middleware('can:allocation,view');
-    Route::post('/allocations/auto', 'AllocationController@auto')->middleware('can:allocation,edit');
-    Route::put('/allocations/{orderItem}', 'AllocationController@setManual')->middleware('can:allocation,edit');
+    /* ------------------------------------------------------- fulfilment */
+    Route::middleware('can:allocation,view')->group(function () {
+        Route::get('/allocations', [AllocationController::class, 'index']);
+        Route::get('/allocations/lines', [AllocationController::class, 'lines']);
+    });
+    Route::post('/allocations/auto', [AllocationController::class, 'auto'])->middleware('can:allocation,edit');
+    Route::put('/allocations/{orderItem}', [AllocationController::class, 'setManual'])->middleware('can:allocation,edit');
 
-    Route::get('/packings', 'PackingController@index')->middleware('can:packing,view');
-    Route::get('/packings/{order}', 'PackingController@show')->middleware('can:packing,view');
-    Route::put('/packings/{packing}', 'PackingController@update')->middleware('can:packing,edit');
-    // Verifying packing generates the challan server-side; quantities are copied
-    // from the packing rows, never accepted from the request body.
-    Route::post('/packings/{packing}/verify', 'PackingController@verify')->middleware('can:packing,edit');
+    Route::middleware('can:packing,view')->group(function () {
+        Route::get('/packings', [PackingController::class, 'index']);
+        Route::get('/packings/{order}', [PackingController::class, 'show']);
+    });
+    Route::put('/packings/{packing}', [PackingController::class, 'update'])->middleware('can:packing,edit');
+    // Copies quantities from the packed lines; never accepts them from the body.
+    Route::post('/packings/{packing}/verify', [PackingController::class, 'verify'])->middleware('can:packing,edit');
 
-    Route::get('/challans', 'ChallanController@index')->middleware('can:delivery,view');
-    Route::get('/challans/{challan}', 'ChallanController@show')->middleware('can:delivery,view');
-    Route::post('/challans/{challan}/dispatch', 'ChallanController@dispatch')->middleware('can:delivery,edit');
+    Route::middleware('can:delivery,view')->group(function () {
+        Route::get('/challans', [ChallanController::class, 'index']);
+        Route::get('/challans/{challan}', [ChallanController::class, 'show']);
+    });
+    Route::post('/challans/{challan}/dispatch', [ChallanController::class, 'dispatch'])->middleware('can:delivery,edit');
 
-    // -------------------------------------------------------- driver app
+    /* ------------------------------------------------------- driver app */
     Route::middleware('can:driver_app,view')->prefix('driver')->group(function () {
-        Route::get('/today', 'DriverController@today');
-        Route::get('/deliveries', 'DriverController@deliveries');
-        Route::get('/history', 'DriverController@history');
-        // Signature and photo arrive as uploads; the server stores files and
-        // keeps only the path, so the JSON payload stays small.
-        Route::post('/challans/{challan}/confirm', 'DriverController@confirmDelivery')
+        Route::get('/today', [DriverController::class, 'today']);
+        Route::get('/deliveries', [DriverController::class, 'deliveries']);
+        Route::get('/history', [DriverController::class, 'history']);
+        Route::post('/challans/{challan}/confirm', [DriverController::class, 'confirmDelivery'])
             ->middleware('can:driver_app,edit');
     });
 
-    // ---------------------------------------------------------- finance
+    /* ---------------------------------------------------------- finance */
     Route::middleware('can:invoices,view')->group(function () {
-        Route::get('/invoices', 'InvoiceController@index');   // status is derived, never stored
-        Route::get('/invoices/{invoice}', 'InvoiceController@show');
+        Route::get('/invoices', [InvoiceController::class, 'index']);
+        Route::get('/invoices/ready', [InvoiceController::class, 'readyToInvoice']);
+        Route::get('/invoices/{invoice}', [InvoiceController::class, 'show']);
     });
-    // Billed from delivered quantity, computed server-side from the challan.
-    Route::post('/invoices', 'InvoiceController@store')->middleware('can:invoices,create');
+    // Billed from delivered quantity, computed server-side.
+    Route::post('/invoices', [InvoiceController::class, 'store'])->middleware('can:invoices,create');
 
-    Route::get('/payments', 'PaymentController@index')->middleware('can:payments,view');
-    // Rejects an amount that would take the invoice past its total.
-    Route::post('/payments', 'PaymentController@store')->middleware('can:payments,create');
+    Route::get('/payments', [PaymentController::class, 'index'])->middleware('can:payments,view');
+    // Refuses anything that would take an invoice past its total.
+    Route::post('/payments', [PaymentController::class, 'store'])->middleware('can:payments,create');
 
-    Route::get('/outstanding', 'OutstandingController@index')->middleware('can:outstanding,view');
-    Route::get('/outstanding/aging', 'OutstandingController@aging')->middleware('can:outstanding,view');
-    Route::get('/ledger/{customer}', 'LedgerController@show')->middleware('can:ledger,view');
+    Route::middleware('can:outstanding,view')->group(function () {
+        Route::get('/outstanding', [OutstandingController::class, 'index']);
+        Route::get('/outstanding/{customer}', [OutstandingController::class, 'forCustomer']);
+    });
+    Route::get('/ledger/{customer}', [LedgerController::class, 'show'])->middleware('can:ledger,view');
 
-    // ---------------------------------------------------------- reports
+    /* ---------------------------------------------------------- reports */
     Route::middleware('can:reports,view')->prefix('reports')->group(function () {
-        Route::get('/sales', 'ReportController@sales');
-        Route::get('/purchase', 'ReportController@purchase');
-        Route::get('/operations', 'ReportController@operations');
+        Route::get('/sales', [ReportController::class, 'sales']);
+        Route::get('/purchase', [ReportController::class, 'purchase']);
+        Route::get('/operations', [ReportController::class, 'operations']);
     });
-    Route::get('/analytics', 'AnalyticsController@index')->middleware('can:analytics,view');
+    Route::get('/analytics', [ReportController::class, 'analytics'])->middleware('can:analytics,view');
+    Route::get('/audit-logs', [ReportController::class, 'auditLogs'])->middleware('can:audit,view');
 
-    // ----------------------------------------------------------- system
-    Route::get('/notifications', 'NotificationController@index');
-    Route::get('/audit-logs', 'AuditLogController@index')->middleware('can:audit,view');
-
+    /* ----------------------------------------------------------- system */
     Route::middleware('can:users,view')->group(function () {
-        Route::get('/users', 'UserController@index');
-        Route::get('/roles', 'RoleController@index');
+        Route::get('/users', [AdminController::class, 'users']);
+        Route::get('/roles', [AdminController::class, 'roles']);
     });
-    Route::post('/users', 'UserController@store')->middleware('can:users,create');
-    Route::put('/users/{user}', 'UserController@update')->middleware('can:users,edit');
-    // Changing the permission matrix is admin-only and always audited.
-    Route::put('/roles/{role}/permissions', 'RoleController@updatePermissions')->middleware('can:users,edit');
+    Route::middleware('can:users,edit')->group(function () {
+        Route::post('/users', [AdminController::class, 'storeUser']);
+        Route::put('/users/{user}', [AdminController::class, 'updateUser']);
+        Route::post('/users/{user}/reset-password', [AdminController::class, 'resetPassword']);
+        Route::put('/roles/{role}/permissions', [AdminController::class, 'updatePermissions']);
+    });
 
-    Route::get('/settings', 'SettingController@index')->middleware('can:settings,view');
-    Route::put('/settings', 'SettingController@update')->middleware('can:settings,edit');
+    Route::get('/settings', [AdminController::class, 'settings'])->middleware('can:settings,view');
+    Route::put('/settings', [AdminController::class, 'updateSettings'])->middleware('can:settings,edit');
 
-    // ---------------------------------------------------- customer portal
-    // Every route below is scoped to the token's own customer_id.
+    /* ---------------------------------------------------- customer portal */
+    // Every route below is bound to the token's own customer.
     Route::middleware(['can:portal,view', 'scope.customer'])->prefix('portal')->group(function () {
-        Route::get('/summary', 'PortalController@summary');
-        Route::get('/orders', 'PortalController@orders');
-        Route::post('/orders', 'PortalController@placeOrder')->middleware('can:portal,create');
-        Route::get('/templates', 'PortalController@templates');       // saved fixed orders
-        Route::post('/templates', 'PortalController@saveTemplate');
-        Route::delete('/templates/{template}', 'PortalController@deleteTemplate');
-        Route::get('/invoices', 'PortalController@invoices');
-        Route::get('/ledger', 'PortalController@ledger');
+        Route::get('/summary', [PortalController::class, 'summary']);
+        Route::get('/catalogue', [PortalController::class, 'catalogue']);
+        Route::get('/orders', [PortalController::class, 'orders']);
+        Route::post('/orders', [PortalController::class, 'placeOrder'])->middleware('can:portal,create');
+        Route::get('/templates', [PortalController::class, 'templates']);
+        Route::post('/templates', [PortalController::class, 'saveTemplate']);
+        Route::delete('/templates/{template}', [PortalController::class, 'deleteTemplate']);
+        Route::get('/invoices', [PortalController::class, 'invoices']);
+        Route::get('/ledger', [PortalController::class, 'ledger']);
     });
 });
