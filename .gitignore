@@ -2,3 +2,10 @@ node_modules
 dist
 public/images/vegetables-source.png
 .DS_Store
+
+# Laravel backend
+backend/vendor
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/storage/*.key
