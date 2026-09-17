@@ -9,7 +9,7 @@ import { DEMO_NOW } from '../../lib/clock';
 import { COMPANY, CONTACT_NAMES, ITEMS, ITEM_QTY_SHEET, PARTIES, ROUTES, SUPPLIERS, type Demand } from './masters';
 import { ROLES, USERS } from './roles';
 
-export const SEED_VERSION = 4;
+export const SEED_VERSION = 5;
 
 /* ------------------------------------------------------------------ rng */
 
@@ -851,6 +851,8 @@ export function generateSeed(): Database {
       ...COMPANY,
       orderCutoffTime: '22:00',
       maxSheetColumns: 14,
+      // Shared terminals on the packing floor should not stay signed in.
+      sessionTimeoutMinutes: 30,
       itemQtySheetItemIds: qtySheetIds,
       defaultPaymentTermsDays: 15,
       invoicePrefix: 'SPAF/26-27/',

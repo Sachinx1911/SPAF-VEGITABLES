@@ -134,7 +134,10 @@ export function SettingsPage() {
                 </Field>
                 <Field label="Invoice Prefix">{(id) => <Input id={id} value={form.invoicePrefix} onChange={(e) => set('invoicePrefix', e.target.value)} />}</Field>
                 <Field label="Challan Prefix">{(id) => <Input id={id} value={form.challanPrefix} onChange={(e) => set('challanPrefix', e.target.value)} />}</Field>
-                <Field label="Max Columns Per Printed Sheet" className="sm:col-span-2">
+                <Field label="Session Timeout (minutes)" hint="Signs out an idle screen. 0 turns it off.">
+                  {(id) => <Input id={id} type="number" min={0} value={form.sessionTimeoutMinutes} onChange={(e) => set('sessionTimeoutMinutes', Number(e.target.value))} />}
+                </Field>
+                <Field label="Max Columns Per Printed Sheet">
                   {(id) => <Input id={id} type="number" value={form.maxSheetColumns} onChange={(e) => set('maxSheetColumns', Number(e.target.value))} />}
                 </Field>
               </div>

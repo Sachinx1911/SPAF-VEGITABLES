@@ -10,7 +10,11 @@ import { Input, Select } from '../../components/ui/Field';
 import { EmptyState } from '../../components/ui/States';
 import { Menu } from '../../components/ui/Dropdown';
 import { CustomerForm } from './CustomerForm';
-import { useDb } from '../../store/useStore';
+import { ImportModal } from '../../components/ui/ImportModal';
+import { useToast } from '../../components/ui/Toast';
+import { addCustomer, nextCustomerCode } from '../../store/actions';
+import { pick } from '../../lib/csv';
+import { useCurrentUser, useDb, useStore } from '../../store/useStore';
 import { CUSTOMER_TYPES, type Customer } from '../../types/models';
 import { addDays, fmtDate, inr, inrCompact } from '../../lib/format';
 import { customerOutstanding } from '../../domain/finance';
@@ -30,6 +34,8 @@ type TabKey = (typeof TABS)[number]['key'];
 
 export function CustomersListPage() {
   const db = useDb();
+  const user = useCurrentUser()!;
+  const toast = useToast();
   const nav = useNavigate();
   const location_ = useLocation();
   const today = todayISO();
@@ -43,6 +49,7 @@ export function CustomersListPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   // /customers/new opens straight into the add form, then returns to the list.
   useEffect(() => {
@@ -189,7 +196,7 @@ export function CustomersListPage() {
                 </button>
               ))}
               <div className="ml-auto flex items-center gap-2 pb-2">
-                <Button variant="secondary" size="sm" icon={Upload}>Import</Button>
+                <Button variant="secondary" size="sm" icon={Upload} onClick={() => setImportOpen(true)}>Import</Button>
                 <Button variant="secondary" size="sm" icon={Download} onClick={exportCsv}>Export</Button>
               </div>
             </div>
@@ -392,6 +399,61 @@ export function CustomersListPage() {
         <p className="text-[15px] font-semibold">Build Long-Term Partnerships</p>
         <p className="text-[12.5px] text-white/80">Happy customers grow your business. Serve fresh, stay fresh.</p>
       </div>
+
+      <ImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import Customers"
+        columns={['Name', 'Type', 'City', 'Contact Person', 'Phone', 'Email', 'GSTIN', 'Credit Limit', 'Payment Terms Days']}
+        sampleRow={['Sunrise Hotel', 'Hotel', 'Andheri West', 'Ramesh Shah', '98200 11111', 'orders@sunrise.in', '27AAAAA0000A1Z5', '200000', '15']}
+        validate={(rec) => {
+          const name = pick(rec, 'name', 'customer name', 'customername');
+          if (!name) return { error: 'Name is required.' };
+          // A name already on file is skipped rather than silently duplicated.
+          if (db.customers.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+            return { error: `"${name}" already exists.` };
+          }
+          const type = pick(rec, 'type', 'customer type') || 'Restaurant';
+          if (!CUSTOMER_TYPES.includes(type as never)) {
+            return { error: `Type "${type}" is not one of ${CUSTOMER_TYPES.join(', ')}.` };
+          }
+          return { value: { rec, name, type } };
+        }}
+        onImport={(rows) => {
+          let created = 0;
+          const seen = new Set<string>();
+          for (const { rec, name, type } of rows) {
+            // Guard against the same name twice inside one file.
+            if (seen.has(name.toLowerCase())) continue;
+            seen.add(name.toLowerCase());
+            addCustomer({
+              code: nextCustomerCode(useStore.getState().db.customers),
+              name,
+              legalName: pick(rec, 'legal name', 'legalname') || name,
+              type: type as never,
+              location: pick(rec, 'city', 'location'),
+              contactPerson: pick(rec, 'contact person', 'contactperson'),
+              mobile: pick(rec, 'phone', 'mobile'),
+              altMobile: '',
+              email: pick(rec, 'email'),
+              billingAddress: pick(rec, 'address', 'billing address'),
+              deliveryAddress: pick(rec, 'delivery address') || pick(rec, 'address'),
+              gstin: pick(rec, 'gstin', 'gst number', 'gst'),
+              pan: pick(rec, 'pan'),
+              paymentTermsDays: Number(pick(rec, 'payment terms days', 'payment terms')) || 15,
+              creditLimit: Number(pick(rec, 'credit limit', 'creditlimit')) || 0,
+              routeId: db.routes[0]?.id ?? '',
+              orderFrequency: 'Daily',
+              preferredOrderTime: '',
+              preferredDeliveryTime: '',
+              specialInstructions: '',
+            }, user.id);
+            created++;
+          }
+          toast({ tone: 'success', title: `${created} customers imported` });
+          return created;
+        }}
+      />
 
       <CustomerForm open={formOpen} onClose={closeForm} />
       <CustomerForm open={!!editing} onClose={() => setEditing(null)} customer={editing} />

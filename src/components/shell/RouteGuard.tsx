@@ -1,14 +1,24 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import { useCurrentUser, useStore } from '../../store/useStore';
+import { useIdleTimeout } from './useIdleTimeout';
 import { can } from '../../lib/nav';
 import type { ModuleKey, PermissionAction } from '../../types/models';
 import { PermissionDeniedPage } from '../../pages/states/StatePages';
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const user = useCurrentUser();
+  const expired = useStore((s) => s.sessionExpired);
   const location = useLocation();
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  useIdleTimeout();
+
+  // An idle timeout and a plain sign-out both leave no user, but they need
+  // different screens: one explains itself, the other just asks for a login.
+  if (!user) {
+    return expired
+      ? <Navigate to="/session-expired" replace />
+      : <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
   return <>{children}</>;
 }
 

@@ -10,13 +10,21 @@ import { Input, Select, Switch } from '../../components/ui/Field';
 import { EmptyState } from '../../components/ui/States';
 import { Menu } from '../../components/ui/Dropdown';
 import { ItemForm } from './ItemForm';
-import { useDb } from '../../store/useStore';
+import { ImportModal } from '../../components/ui/ImportModal';
+import { useToast } from '../../components/ui/Toast';
+import { addItem, nextItemCode } from '../../store/actions';
+import { pick } from '../../lib/csv';
+import { useCurrentUser, useDb, useStore } from '../../store/useStore';
 import { CATEGORIES, UNITS, type Category, type Item } from '../../types/models';
 import { fmtDateTime, inr, num } from '../../lib/format';
 import { itemEmoji } from '../orders/orderUi';
 import { cn } from '../../lib/cn';
 
 const TOOLTIP = { fontSize: 12, borderRadius: 8, border: '1px solid #e3e8e4', boxShadow: '0 4px 12px rgba(16,40,26,0.1)' };
+const CAT_PREFIX: Record<string, string> = {
+  'Indian Vegetables': 'IV', 'Imported Produce': 'IP', 'Herbs & Leafy': 'HL', 'Fresh Fruits': 'FF', 'Exotic Vegetables': 'EX',
+};
+
 const CATEGORY_COLOR: Record<Category, string> = {
   'Indian Vegetables': '#2f7f50',
   'Fresh Fruits': '#f97316',
@@ -51,6 +59,8 @@ const STATE_COLOR: Record<StockState, string> = {
 
 export function ItemsListPage() {
   const db = useDb();
+  const user = useCurrentUser()!;
+  const toast = useToast();
   const nav = useNavigate();
   const loc = useLocation();
 
@@ -63,6 +73,7 @@ export function ItemsListPage() {
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   // /items/new opens straight into the add form, then returns to the list.
   useEffect(() => {
@@ -174,7 +185,7 @@ export function ItemsListPage() {
               <Select value={unit} onChange={(e) => { setUnit(e.target.value); setPage(1); }} placeholder="All Units" options={[...UNITS]} className="w-28" />
               <Switch checked={lowStockOnly} onChange={(v) => { setLowStockOnly(v); setPage(1); }} label="Show low stock only" />
               <div className="ml-auto flex items-center gap-2">
-                <Button variant="secondary" size="sm" icon={Upload}>Import</Button>
+                <Button variant="secondary" size="sm" icon={Upload} onClick={() => setImportOpen(true)}>Import</Button>
                 <Button variant="secondary" size="sm" icon={Download} onClick={exportCsv}>Export</Button>
                 <Button variant="secondary" size="sm" icon={Printer} onClick={() => window.print()}>Print</Button>
               </div>
@@ -341,6 +352,62 @@ export function ItemsListPage() {
         <p className="text-[15px] font-semibold">Fresh Inventory, Better Tomorrow</p>
         <p className="text-[12.5px] text-white/80">Keep track of your stock and ensure fresh produce reaches more people.</p>
       </div>
+
+      <ImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import Items"
+        columns={['Name', 'Unit', 'Category', 'Purchase Price', 'Selling Price', 'Min Stock', 'Reorder Level', 'Tax Rate']}
+        sampleRow={['Baby Spinach', 'Kg', 'Herbs & Leafy', '90', '120', '5', '10', '0']}
+        validate={(rec) => {
+          const name = pick(rec, 'name', 'item name', 'itemname');
+          if (!name) return { error: 'Name is required.' };
+          const unit = pick(rec, 'unit');
+          if (!unit) return { error: `"${name}" has no unit — Item + Unit is the SKU.` };
+          if (!UNITS.includes(unit as never)) {
+            return { error: `Unit "${unit}" is not one of ${UNITS.join(', ')}.` };
+          }
+          const category = pick(rec, 'category');
+          if (!CATEGORIES.includes(category as never)) {
+            return { error: `Category "${category || '(blank)'}" is not a known category.` };
+          }
+          // The same produce in another unit is a different SKU, so only an
+          // exact name+unit match counts as a duplicate.
+          if (db.items.some((i) => i.name.toLowerCase() === name.toLowerCase() && i.unit === unit)) {
+            return { error: `"${name} (${unit})" already exists.` };
+          }
+          const purchase = Number(pick(rec, 'purchase price', 'purchaseprice'));
+          if (!purchase || purchase <= 0) return { error: `"${name}" needs a purchase price above zero.` };
+          return { value: { rec, name, unit, category, purchase } };
+        }}
+        onImport={(rows) => {
+          let created = 0;
+          const seen = new Set<string>();
+          for (const { rec, name, unit, category, purchase } of rows) {
+            const sku = `${name.toLowerCase()}|${unit}`;
+            if (seen.has(sku)) continue;   // same SKU twice in one file
+            seen.add(sku);
+            const selling = Number(pick(rec, 'selling price', 'sellingprice')) || Math.round(purchase * 1.32);
+            addItem({
+              code: nextItemCode(useStore.getState().db.items, CAT_PREFIX[category] ?? 'IT'),
+              name,
+              excelName: name,
+              category: category as never,
+              unit: unit as never,
+              purchaseUnit: unit as never,
+              sellingUnit: unit as never,
+              minStock: Number(pick(rec, 'min stock', 'minstock')) || 0,
+              reorderLevel: Number(pick(rec, 'reorder level', 'reorderlevel')) || 0,
+              defaultPurchasePrice: purchase,
+              defaultSellingPrice: selling,
+              taxRate: Number(pick(rec, 'tax rate', 'taxrate', 'gst')) || 0,
+            }, user.id);
+            created++;
+          }
+          toast({ tone: 'success', title: `${created} items imported` });
+          return created;
+        }}
+      />
 
       <ItemForm open={formOpen} onClose={closeForm} />
       <ItemForm open={!!editing} onClose={() => setEditing(null)} item={editing} />

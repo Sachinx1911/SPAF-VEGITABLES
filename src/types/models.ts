@@ -516,6 +516,8 @@ export interface Settings {
   companyEmail: string;
   orderCutoffTime: string; // HH:mm, for next-day delivery
   maxSheetColumns: number; // customers per printed consolidation sheet
+  /** Minutes of inactivity before the session ends. 0 disables the timeout. */
+  sessionTimeoutMinutes: number;
   itemQtySheetItemIds: ID[];
   defaultPaymentTermsDays: number;
   invoicePrefix: string;
