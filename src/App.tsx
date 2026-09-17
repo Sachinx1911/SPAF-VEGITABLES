@@ -1,9 +1,11 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { HashRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "./components/ui/Toast";
 import { ConfirmProvider } from "./components/ui/ConfirmDialog";
 import { AppShell } from "./components/shell/AppShell";
 import { ErrorBoundary } from "./components/shell/ErrorBoundary";
+import { API_MODE } from "./lib/api";
+import { useStore } from "./store/useStore";
 import { CustomerShell } from "./components/shell/CustomerShell";
 import {
   RequireAuth,
@@ -367,7 +369,29 @@ function RouteFallback() {
   );
 }
 
+/**
+ * Checks a stored token before the first render decides anything.
+ *
+ * Without this a page refresh would bounce a signed-in user to the login
+ * screen, because the session itself is not persisted in API mode — the token
+ * is, and only the server can say whether it is still good.
+ */
+function useRestoredSession(): boolean {
+  const restoring = useStore((s) => s.restoring);
+  const restore = useStore((s) => s.restoreApiSession);
+
+  useEffect(() => {
+    if (API_MODE) void restore();
+  }, [restore]);
+
+  return API_MODE ? restoring : false;
+}
+
 export default function App() {
+  const restoring = useRestoredSession();
+
+  if (restoring) return <RouteFallback />;
+
   return (
     <ErrorBoundary>
       <ToastProvider>

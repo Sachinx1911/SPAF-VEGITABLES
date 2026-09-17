@@ -4,6 +4,10 @@ import type { Database, User } from '../types/models';
 import { generateSeed, SEED_VERSION } from '../data/seed/generate';
 import { DEMO_PASSWORD } from '../data/seed/roles';
 import { nowISO, setSeededAt } from '../lib/clock';
+import { API_MODE, setUnauthenticatedHandler } from '../lib/api';
+import { apiLogin, apiLogout, apiRestoreSession, type ApiSession } from './authApi';
+import { setServerPermissions } from '../lib/nav';
+import type { ModuleKey, PermissionAction } from '../types/models';
 
 const DB_KEY = 'spaf-os.db';
 const UI_KEY = 'spaf-os.ui';
@@ -58,7 +62,17 @@ interface DataState {
   db: Database;
   session: Session | null;
   sessionExpired: boolean;
+  /**
+   * In API mode the signed-in user and their grants come from the server rather
+   * than from the seeded tables, so they are held separately.
+   */
+  apiUser: User | null;
+  apiPermissions: Partial<Record<ModuleKey, PermissionAction[]>> | null;
+  /** True while a stored token is being checked on first load. */
+  restoring: boolean;
   login: (identifier: string, password: string, remember: boolean) => LoginResult;
+  loginViaApi: (identifier: string, password: string, remember: boolean) => Promise<{ ok: boolean; error?: string }>;
+  restoreApiSession: () => Promise<void>;
   loginAs: (userId: string) => User | null;
   logout: () => void;
   expireSession: () => void;
@@ -76,6 +90,9 @@ export const useStore = create<DataState>()(
       db: firstDb,
       session: null,
       sessionExpired: false,
+      apiUser: null,
+      apiPermissions: null,
+      restoring: API_MODE,
 
       login: (identifier, password, remember) => {
         const id = identifier.trim().toLowerCase();
@@ -96,8 +113,52 @@ export const useStore = create<DataState>()(
         return user;
       },
 
-      logout: () => set({ session: null, sessionExpired: false }),
-      expireSession: () => set({ session: null, sessionExpired: true }),
+      /** Signs in against the server. Only used when VITE_API_URL is set. */
+      loginViaApi: async (identifier, password, remember) => {
+        const res = await apiLogin(identifier, password, remember);
+        if (!res.ok) return { ok: false, error: res.error };
+
+        setServerPermissions(res.session.permissions);
+        set({
+          apiUser: res.session.user,
+          apiPermissions: res.session.permissions,
+          session: { userId: res.session.user.id, loginAt: nowISO(), remember },
+          sessionExpired: false,
+          restoring: false,
+        });
+        return { ok: true };
+      },
+
+      /** Checks a stored token on first load so a refresh does not sign the user out. */
+      restoreApiSession: async () => {
+        if (!API_MODE) {
+          set({ restoring: false });
+          return;
+        }
+        const session: ApiSession | null = await apiRestoreSession();
+        setServerPermissions(session?.permissions ?? null);
+        set(
+          session
+            ? {
+                apiUser: session.user,
+                apiPermissions: session.permissions,
+                session: { userId: session.user.id, loginAt: nowISO(), remember: true },
+                restoring: false,
+              }
+            : { apiUser: null, apiPermissions: null, session: null, restoring: false },
+        );
+      },
+
+      logout: () => {
+        if (API_MODE) void apiLogout();
+        setServerPermissions(null);
+        set({ session: null, sessionExpired: false, apiUser: null, apiPermissions: null });
+      },
+      expireSession: () => {
+        if (API_MODE) void apiLogout();
+        setServerPermissions(null);
+        set({ session: null, sessionExpired: true, apiUser: null, apiPermissions: null });
+      },
 
       resetDemo: () => {
         const db = generateSeed();
@@ -111,7 +172,10 @@ export const useStore = create<DataState>()(
       name: DB_KEY,
       version: SEED_VERSION,
       storage: createJSONStorage(() => safeStorage),
-      partialize: (s) => ({ db: s.db, session: s.session }),
+      // The API session is never persisted: the token decides whether it is
+      // still valid, and a stale copy here would show a signed-in shell to
+      // somebody the server has already logged out.
+      partialize: (s) => (API_MODE ? { db: s.db } : { db: s.db, session: s.session }),
       migrate: () => ({ db: generateSeed(), session: null }) as never,
     },
   ),
@@ -141,5 +205,14 @@ export function useDb() {
 }
 
 export function useCurrentUser(): User | null {
-  return useStore((s) => (s.session ? (s.db.users.find((u) => u.id === s.session!.userId) ?? null) : null));
+  return useStore((s) => {
+    if (API_MODE) return s.apiUser;
+    return s.session ? (s.db.users.find((u) => u.id === s.session!.userId) ?? null) : null;
+  });
 }
+
+/** A 401 from any call ends the session, so the shell stops showing stale data. */
+setUnauthenticatedHandler(() => {
+  const { session, expireSession } = useStore.getState();
+  if (session) expireSession();
+});

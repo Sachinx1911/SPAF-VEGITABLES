@@ -98,7 +98,23 @@ export const EXTRA_ROUTES: NavItem[] = [
 
 export const ALL_ROUTES: NavItem[] = [...NAV.flatMap((s) => s.items), ...EXTRA_ROUTES];
 
+/**
+ * Grants the current session holds, when the server supplied them.
+ *
+ * In API mode this is the authority: the same grid the server checks on every
+ * request, so a button is hidden exactly when the call behind it would be
+ * refused. Without it the two could drift, and the UI would offer actions that
+ * fail.
+ */
+let serverPermissions: Partial<Record<ModuleKey, PermissionAction[]>> | null = null;
+
+export function setServerPermissions(p: Partial<Record<ModuleKey, PermissionAction[]>> | null): void {
+  serverPermissions = p;
+}
+
 export function can(db: Database, role: RoleKey, module: ModuleKey, action: PermissionAction = 'view'): boolean {
+  if (serverPermissions) return !!serverPermissions[module]?.includes(action);
+
   const r = db.roles.find((x) => x.key === role);
   return !!r?.permissions[module]?.includes(action);
 }

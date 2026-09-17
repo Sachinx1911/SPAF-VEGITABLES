@@ -5,12 +5,14 @@ import { Button } from '../../components/ui/Button';
 import { Field, Input, Checkbox } from '../../components/ui/Field';
 import { InlineError } from '../../components/ui/States';
 import { useStore } from '../../store/useStore';
+import { API_MODE } from '../../lib/api';
 import { DEMO_PASSWORD } from '../../data/seed/roles';
 import { homePathFor } from '../../lib/nav';
 
 export function LoginPage() {
   const nav = useNavigate();
   const login = useStore((s) => s.login);
+  const loginViaApi = useStore((s) => s.loginViaApi);
   const loginAs = useStore((s) => s.loginAs);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -19,12 +21,23 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!identifier.trim()) return setError('Enter your email or mobile number.');
     if (!password) return setError('Enter your password.');
     setLoading(true);
+
+    // Against a real backend the password is checked on the server, against
+    // that user's own hash. Demo builds still use the in-browser check.
+    if (API_MODE) {
+      const res = await loginViaApi(identifier, password, remember);
+      setLoading(false);
+      if (!res.ok) return setError(res.error ?? 'Sign in failed.');
+      const user = useStore.getState().apiUser;
+      return nav(homePathFor(user?.role ?? 'admin'));
+    }
+
     setTimeout(() => {
       const res = login(identifier, password, remember);
       setLoading(false);
@@ -108,8 +121,9 @@ export function LoginPage() {
             <ShieldCheck size={13} className="text-emerald-600" /> Signed in sessions are role-restricted
           </div>
 
-          {/* Sign-in without a password — dev builds only, never shipped. */}
-          {import.meta.env.DEV && (
+          {/* Sign-in without a password — dev builds only, and never when a real
+              backend is configured, since these bypass the server entirely. */}
+          {import.meta.env.DEV && !API_MODE && (
             <div className="mt-7 border-t border-line pt-5">
               <p className="mb-2.5 text-center text-[11.5px] font-medium tracking-wide text-subtle uppercase">Demo access</p>
               <div className="grid grid-cols-2 gap-2">
