@@ -1,17 +1,30 @@
-# SPAF — Operations OS · Apache configuration for cPanel shared hosting.
-# This file is copied into dist/ by the build and must sit next to index.html.
+# SPAF — Operations OS · web server config.
+# Copied into dist/ by the build; must sit next to index.html in public_html.
+#
+# Written for Hostinger (LiteSpeed). LiteSpeed reads .htaccess and emulates the
+# Apache modules named below, so the same file also works on plain Apache/cPanel.
+#
+# If the site returns 500 after upload, the host has disallowed one directive.
+# Comment out the "Options -Indexes" line first, then the hardening block —
+# those are the two that vary between hosts.
+
+DirectoryIndex index.html
 
 # ---------------------------------------------------------------- HTTPS only
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  # Force HTTPS. On cPanel behind a proxy, X-Forwarded-Proto is the reliable signal.
+  # Force HTTPS.
+  # NOTE: if "Force HTTPS" is switched on in hPanel, leave these three lines
+  # commented out — two redirects chained together cause a redirect loop.
   RewriteCond %{HTTPS} !=on
   RewriteCond %{HTTP:X-Forwarded-Proto} !https
   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-  # The app routes with a hash (#/orders), so every real path is a file.
+  # The app routes with a hash (#/orders), so every real request is for a file.
   # Anything that is not an existing file falls back to index.html.
+  # /api is excluded so the Laravel backend can live alongside it later.
+  RewriteCond %{REQUEST_URI} !^/api
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^ index.html [L]
@@ -19,8 +32,9 @@
 
 # ------------------------------------------------------------ security headers
 <IfModule mod_headers.c>
-  # Tell browsers to use HTTPS for a year. Only takes effect over HTTPS.
-  # Add ; preload once the domain is confirmed HTTPS-only and submitted.
+  # Use HTTPS for a year. Ignored by browsers over plain HTTP, so this only
+  # starts working once the SSL certificate is active.
+  # Add "; preload" only after the domain is confirmed HTTPS-only.
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
   # No MIME sniffing — a text file must never be executed as a script.
@@ -38,26 +52,32 @@
   # Content Security Policy.
   #   'unsafe-inline' on style-src is required by Tailwind's runtime styles and
   #   the inline style attributes used for chart colours and bar widths.
-  #   img-src allows data: for uploaded photos and signature canvases.
-  #   No script sources other than this origin — no CDN, no inline script.
+  #   img-src allows data: and blob: for uploaded photos and signature canvases.
+  #   No script source other than this origin — no CDN, no inline script.
+  #   connect-src 'self' already covers an /api on the same domain. If the API
+  #   is put on a subdomain instead, add it here or the browser will block it.
   Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
 
-  # Never let a proxy or browser cache the entry document; hashed assets are immutable.
-  <FilesMatch "\.(html)$">
+  # The entry document must never be cached — a stale index.html would point at
+  # asset filenames that no longer exist after a deploy. Hashed assets are
+  # immutable and can be cached for a year.
+  <FilesMatch "\.html$">
     Header always set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
-  <FilesMatch "\.(js|css|woff2|png|jpg|svg)$">
+  <FilesMatch "\.(js|css|woff2|png|jpg|jpeg|svg|webp)$">
     Header always set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
 </IfModule>
 
 # ---------------------------------------------------------------- compression
+# LiteSpeed compresses these on its own, but the directive is harmless there and
+# needed on plain Apache.
 <IfModule mod_deflate.c>
   AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/javascript application/json image/svg+xml
 </IfModule>
 
 # ------------------------------------------------------------------ hardening
-# Never serve source maps, config or dependency manifests if they are uploaded by mistake.
+# Never serve source maps or project files, should any be uploaded by mistake.
 <FilesMatch "\.(map|lock|ts|tsx|md|yml|yaml)$">
   <IfModule mod_authz_core.c>
     Require all denied
@@ -79,5 +99,5 @@
   </IfModule>
 </FilesMatch>
 
-# Do not advertise the directory listing.
+# Do not advertise a directory listing.
 Options -Indexes

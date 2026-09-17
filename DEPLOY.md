@@ -1,85 +1,214 @@
-# Deploying SPAF — Operations OS
+# Deploying SPAF — Operations OS to Hostinger
 
-## Build
+Written for **Hostinger Business Web Hosting** (LiteSpeed, hPanel). The same
+steps work on any cPanel host; where Hostinger differs it is called out.
+
+---
+
+## Read this first
+
+The app ships in two halves and they go live at different times.
+
+| | What it is | Ready? |
+|---|---|---|
+| **Frontend** | The whole UI. Keeps its data in the browser. | **Yes — deploy today** |
+| **Backend** | Laravel API + MySQL. Real logins, shared data. | Schema and auth only |
+
+Until the backend is finished, a live frontend means:
+
+- **each browser has its own separate data** — what the packing floor enters
+  does not reach the office screen
+- **every account shares one password**, and it is readable in the shipped code
+- nothing is backed up server-side; clearing site data wipes that browser's copy
+
+So step 1 gets a real, working URL the team can open and try. Treat it as an
+internal trial, not the system of record, until step 2 lands.
+
+---
+
+## Step 1 — Frontend (today)
+
+### 1.1 Build
+
+On your own machine:
 
 ```bash
 npm ci
 npm run build
 ```
 
-`npm run build` runs three gates in order and stops at the first failure:
+Three gates run in order and stop at the first failure: `tsc --noEmit`, then
+the 86-test suite, then the bundle. A green run leaves everything in `dist/`.
 
-1. `tsc --noEmit` — type errors
-2. `vitest run` — the 65-test suite
-3. `vite build` — the production bundle into `dist/`
+### 1.2 Upload
 
-The result is plain static files. `base: './'` means `dist/` can sit at the
-domain root or in any sub-directory.
+In hPanel → **Files → File Manager**, open `public_html`.
 
-## Upload
+Upload **the contents of `dist/`**, not the `dist` folder itself. When you are
+done, `public_html/index.html` must exist — not `public_html/dist/index.html`.
 
-Copy **the contents of `dist/`** (not the folder itself) into `public_html/`,
-or into a sub-directory if the app is not at the domain root.
+Fastest way: zip the contents of `dist/`, upload the zip, then use File
+Manager's **Extract**.
 
-`dist/.htaccess` must go up with it — it carries the HTTPS redirect and every
-security header. It is a dotfile, so make sure the FTP client or cPanel File
-Manager is set to **show hidden files**, otherwise it will be silently skipped.
+> **`.htaccess` is a hidden file.** In File Manager turn on
+> **Settings → Show hidden files** before uploading, or it is silently skipped
+> and every security header is lost. After extracting, confirm
+> `public_html/.htaccess` is listed.
 
-## HTTPS
+### 1.3 SSL
 
-1. cPanel → **SSL/TLS Status** → run *AutoSSL* for the domain (free Let's Encrypt).
-2. Wait for the certificate to show as active.
-3. Load `https://yourdomain/` once and confirm the padlock.
+hPanel → **Websites → your domain → Security → SSL**. Hostinger issues a free
+certificate automatically; if it is not active yet, click **Install SSL** and
+wait a few minutes.
 
-Only then is the redirect in `.htaccess` doing anything useful. `Strict-Transport-Security`
-is ignored by browsers over plain HTTP, so an incomplete certificate will look
-like the header "isn't working" when the real cause is the certificate.
+Then decide **one** place to force HTTPS — not both:
 
-Do not add `; preload` to the HSTS header until the domain is confirmed
-HTTPS-only — preloading is hard to undo.
+- **Recommended:** leave hPanel's *Force HTTPS* switched **off** and let the
+  `.htaccess` rule do it (already in the file).
+- Or switch hPanel's *Force HTTPS* **on**, and comment out the three
+  `RewriteCond`/`RewriteRule` HTTPS lines in `.htaccess`.
 
-## What `.htaccess` does
+Turning on both causes a redirect loop and the site stops loading.
 
-| Header | Effect |
-|---|---|
-| `Strict-Transport-Security` | Browser uses HTTPS for a year, no downgrade |
-| `Content-Security-Policy` | Scripts load only from this origin; no inline script, no CDN |
-| `X-Frame-Options: DENY` | Page cannot be framed — blocks clickjacking |
-| `X-Content-Type-Options: nosniff` | A text file can never be executed as script |
-| `Referrer-Policy` | Only the origin leaks to third parties, never the path |
-| `Permissions-Policy` | Camera, mic, geolocation and payment APIs switched off |
-
-It also forces HTTPS, caches hashed assets for a year while keeping
-`index.html` uncached, gzips text responses, blocks dotfiles and source maps,
-and disables directory listing.
-
-### Verifying after upload
+### 1.4 Verify
 
 ```bash
-curl -sI https://yourdomain/ | grep -iE "strict-transport|content-security|x-frame|x-content-type"
+curl -sI https://yourdomain.com | grep -iE "strict-transport|content-security|x-frame|x-content-type"
 ```
 
-All four should come back. If they do not, `mod_headers` is disabled on the
-host — ask the provider to enable it.
+All four headers should come back. If they are missing, `mod_headers` is not
+active — open a Hostinger support ticket, it is enabled by default on Business.
 
-## Known limits of this build
+Then open the site and check:
 
-This is a **front-end prototype**. Everything below has to change before real
-customer and money data goes in:
+- the login page appears (the demo buttons and the printed password are
+  **not** there — they are stripped from production builds)
+- signing in works and the dashboard loads
+- a couple of screens with charts render
 
-- **Authentication runs in the browser.** Every account shares one password,
-  and the check happens in JavaScript the user controls. Anyone can read it
-  from the bundle or bypass it with devtools.
-- **All data lives in `localStorage`.** It is per-browser, editable by the
-  person using it, and lost when site data is cleared. There is no server copy.
-- **Permissions are UI-level only.** They hide screens; they do not protect
-  data, because there is no server to enforce them.
+### 1.5 First login
 
-The fix for all three is the same: move the database and auth behind an API.
-`backend/` holds the schema and route plan for that work. Until it is in
-place, treat this deployment as an internal demo, not a system of record.
+Accounts come from the seeded demo data. Admin:
 
-## Rolling back
+- **Email:** `rajesh.patil@svproagro.in`
+- **Password:** `spaf@123`
 
-Each release is just a folder of files. Keep the previous `dist/` and swap the
-directory back — there is no database migration to undo.
+Change this the moment the backend is live. Until then the same password opens
+every account, so do not put anything confidential in.
+
+---
+
+## Step 2 — Backend (next)
+
+Hostinger Business has everything the API needs: SSH, Composer, PHP 8.x,
+MySQL and cron. See `backend/README.md` for what is built and what is not.
+
+### 2.1 Database
+
+hPanel → **Databases → MySQL Databases**. Create a database and a user, give
+the user all privileges, and note the four values — Hostinger prefixes the
+names, e.g. `u123456789_spaf`.
+
+### 2.2 Where the code goes
+
+Laravel must **not** sit inside `public_html`, or its `.env` becomes
+downloadable. Put the app one level up and point a subdomain at its `public`
+folder:
+
+```
+/home/uXXXXXXX/
+├── public_html/          ← the React build (step 1)
+└── spaf-api/             ← Laravel lives here, not web-accessible
+    └── public/           ← api.yourdomain.com points here
+```
+
+1. hPanel → **Domains → Subdomains** → create `api.yourdomain.com`.
+2. Set its document root to `/spaf-api/public`.
+3. Issue SSL for the subdomain too.
+
+### 2.3 Install
+
+SSH in (hPanel → **Advanced → SSH Access** for the credentials):
+
+```bash
+cd ~
+composer create-project laravel/laravel spaf-api
+cd spaf-api
+composer require laravel/sanctum
+```
+
+Copy `backend/app`, `backend/database` and `backend/routes/api.php` from this
+repo over the fresh install, then:
+
+```bash
+php artisan migrate
+```
+
+Set PHP to 8.2 or newer first: hPanel → **Advanced → PHP Configuration**.
+
+### 2.4 `.env`
+
+```
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://api.yourdomain.com
+
+DB_CONNECTION=mysql
+DB_HOST=localhost
+DB_DATABASE=uXXXXXXX_spaf
+DB_USERNAME=uXXXXXXX_spaf
+DB_PASSWORD=…
+
+SESSION_SECURE_COOKIE=true
+SANCTUM_STATEFUL_DOMAINS=yourdomain.com
+```
+
+`APP_DEBUG=false` is not optional — with it on, any error page prints the stack
+trace and parts of the configuration to whoever triggered it.
+
+### 2.5 Connect the two halves
+
+The API is on a different origin from the app, so two things change:
+
+- **CORS** — allow `https://yourdomain.com` in `config/cors.php`.
+- **CSP** — `connect-src 'self'` in `.htaccess` blocks a subdomain. Change it to
+  `connect-src 'self' https://api.yourdomain.com`, or the browser will refuse
+  every API call with no obvious error.
+
+### 2.6 Cron
+
+hPanel → **Advanced → Cron Jobs**, once a minute:
+
+```
+php /home/uXXXXXXX/spaf-api/artisan schedule:run >> /dev/null 2>&1
+```
+
+This is what writes the daily snapshot the dashboard compares against.
+
+---
+
+## Re-deploying the frontend
+
+```bash
+npm run build
+```
+
+Upload the new `dist/` contents over the old ones. Asset filenames are hashed,
+so browsers pick up the new build immediately; `index.html` is served
+uncached, which is what makes that work.
+
+Keep the previous `dist/` folder. Rolling back is just putting those files
+back — there is no database change to reverse.
+
+---
+
+## If something goes wrong
+
+| Symptom | Cause |
+|---|---|
+| Blank page, 404 on assets | `dist` folder uploaded instead of its contents |
+| Redirect loop | hPanel *Force HTTPS* **and** the `.htaccess` rule both on |
+| 500 error | A directive the host disallows — comment out `Options -Indexes`, then the hardening block |
+| Headers missing from `curl` | `.htaccess` not uploaded (hidden file), or `mod_headers` off |
+| Site loads, API calls fail | CORS not set, or CSP `connect-src` still `'self'` |
+| Styles missing | `base: './'` changed in `vite.config.ts` — it must stay relative |
