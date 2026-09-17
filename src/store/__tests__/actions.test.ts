@@ -18,10 +18,10 @@ const USER = 'u_ops';
 describe('createOrder', () => {
   beforeEach(reset);
 
-  it('records the ordered quantity and leaves every later stage empty', () => {
+  it('records the ordered quantity and leaves every later stage empty', async () => {
     const db = useStore.getState().db;
     const item = db.items[0];
-    const order = createOrder(
+    const order = await createOrder(
       {
         customerId: db.customers[0].id,
         deliveryDate: '2026-09-20',
@@ -36,10 +36,10 @@ describe('createOrder', () => {
     expect(line.qty.paid).toBeNull();
   });
 
-  it('writes an audit entry for the new order', () => {
+  it('writes an audit entry for the new order', async () => {
     const db = useStore.getState().db;
     const before = db.auditLogs.length;
-    const order = createOrder(
+    const order = await createOrder(
       { customerId: db.customers[0].id, deliveryDate: '2026-09-20', lines: [{ itemId: db.items[0].id, unit: db.items[0].unit, qty: 1, rate: 10 }] },
       USER,
     );
@@ -48,9 +48,9 @@ describe('createOrder', () => {
     expect(after.auditLogs[0].recordRef).toBe(order.orderNo);
   });
 
-  it('parks a draft without flagging it late', () => {
+  it('parks a draft without flagging it late', async () => {
     const db = useStore.getState().db;
-    const order = createOrder(
+    const order = await createOrder(
       { customerId: db.customers[0].id, deliveryDate: '2026-09-20', draft: true, lines: [{ itemId: db.items[0].id, unit: db.items[0].unit, qty: 1, rate: 10 }] },
       USER,
     );
@@ -62,35 +62,35 @@ describe('createOrder', () => {
 describe('approveOrder', () => {
   beforeEach(reset);
 
-  it('fills approved without touching ordered', () => {
+  it('fills approved without touching ordered', async () => {
     const db = useStore.getState().db;
     const order = db.orders.find((o) => o.status === 'Submitted' || o.status === 'Late')!;
     const before = db.orderItems.filter((l) => l.orderId === order.id).map((l) => l.qty.ordered);
 
-    approveOrder(order.id, USER);
+    await approveOrder(order.id, USER);
 
     const after = useStore.getState().db.orderItems.filter((l) => l.orderId === order.id);
     expect(after.map((l) => l.qty.ordered)).toEqual(before);
     expect(after.every((l) => l.qty.approved === l.qty.ordered)).toBe(true);
   });
 
-  it('stamps who approved it and when', () => {
+  it('stamps who approved it and when', async () => {
     const db = useStore.getState().db;
     const order = db.orders.find((o) => o.status === 'Submitted' || o.status === 'Late')!;
-    approveOrder(order.id, USER);
+    await approveOrder(order.id, USER);
     const updated = useStore.getState().db.orders.find((o) => o.id === order.id)!;
     expect(updated.status).toBe('Approved');
     expect(updated.approvedBy).toBe(USER);
     expect(updated.approvedAt).toBeTruthy();
   });
 
-  it('honours a reduced quantity while still preserving what was ordered', () => {
+  it('honours a reduced quantity while still preserving what was ordered', async () => {
     const db = useStore.getState().db;
     const order = db.orders.find((o) => o.status === 'Submitted' || o.status === 'Late')!;
     const line = db.orderItems.find((l) => l.orderId === order.id)!;
     const ordered = line.qty.ordered!;
 
-    approveOrder(order.id, USER, { [line.id]: ordered - 1 });
+    await approveOrder(order.id, USER, { [line.id]: ordered - 1 });
 
     const after = useStore.getState().db.orderItems.find((l) => l.id === line.id)!;
     expect(after.qty.ordered).toBe(ordered);
@@ -101,10 +101,10 @@ describe('approveOrder', () => {
 describe('rejectOrder', () => {
   beforeEach(reset);
 
-  it('marks the order rejected, keeps the reason, and never fills approved', () => {
+  it('marks the order rejected, keeps the reason, and never fills approved', async () => {
     const db = useStore.getState().db;
     const order = db.orders.find((o) => o.status === 'Submitted' || o.status === 'Late')!;
-    rejectOrder(order.id, 'Cutoff missed', USER);
+    await rejectOrder(order.id, 'Cutoff missed', USER);
     const after = useStore.getState().db;
     const updated = after.orders.find((o) => o.id === order.id)!;
     expect(updated.status).toBe('Rejected');
@@ -116,16 +116,16 @@ describe('rejectOrder', () => {
 describe('lockConsolidation', () => {
   beforeEach(reset);
 
-  it('locks the approved orders for the date and generates a requirement from them', () => {
+  it('locks the approved orders for the date and generates a requirement from them', async () => {
     const db = useStore.getState().db;
     const date = '2026-09-21';
     const item = db.items[0];
-    const a = createOrder({ customerId: db.customers[0].id, deliveryDate: date, lines: [{ itemId: item.id, unit: item.unit, qty: 4, rate: 10 }] }, USER);
-    const b = createOrder({ customerId: db.customers[1].id, deliveryDate: date, lines: [{ itemId: item.id, unit: item.unit, qty: 6, rate: 10 }] }, USER);
-    approveOrder(a.id, USER);
-    approveOrder(b.id, USER);
+    const a = await createOrder({ customerId: db.customers[0].id, deliveryDate: date, lines: [{ itemId: item.id, unit: item.unit, qty: 4, rate: 10 }] }, USER);
+    const b = await createOrder({ customerId: db.customers[1].id, deliveryDate: date, lines: [{ itemId: item.id, unit: item.unit, qty: 6, rate: 10 }] }, USER);
+    await approveOrder(a.id, USER);
+    await approveOrder(b.id, USER);
 
-    lockConsolidation(date, USER);
+    await lockConsolidation(date, USER);
 
     const after = useStore.getState().db;
     expect(after.orders.find((o) => o.id === a.id)!.status).toBe('Locked');
@@ -135,13 +135,13 @@ describe('lockConsolidation', () => {
     expect(requirement.requiredQty).toBe(10); // both orders summed
   });
 
-  it('leaves orders that were never approved out of the lock', () => {
+  it('leaves orders that were never approved out of the lock', async () => {
     const db = useStore.getState().db;
     const date = '2026-09-22';
     const item = db.items[0];
-    const pending = createOrder({ customerId: db.customers[0].id, deliveryDate: date, lines: [{ itemId: item.id, unit: item.unit, qty: 5, rate: 10 }] }, USER);
+    const pending = await createOrder({ customerId: db.customers[0].id, deliveryDate: date, lines: [{ itemId: item.id, unit: item.unit, qty: 5, rate: 10 }] }, USER);
 
-    lockConsolidation(date, USER);
+    await lockConsolidation(date, USER);
 
     expect(useStore.getState().db.orders.find((o) => o.id === pending.id)!.status).not.toBe('Locked');
   });
@@ -150,10 +150,10 @@ describe('lockConsolidation', () => {
 describe('recordPayment', () => {
   beforeEach(reset);
 
-  it('moves an invoice to Paid once the balance is cleared', () => {
+  it('moves an invoice to Paid once the balance is cleared', async () => {
     const db = useStore.getState().db;
     const open = invoiceViews(db, '2026-09-13').find((i) => i.balance > 0)!;
-    recordPayment(
+    await recordPayment(
       { invoiceId: open.id, customerId: open.customerId, amount: open.balance, mode: 'UPI', reference: 'TEST-1', paymentDate: '2026-09-13', remarks: '' },
       USER,
     );
@@ -162,10 +162,10 @@ describe('recordPayment', () => {
     expect(after.derivedStatus).toBe('Paid');
   });
 
-  it('leaves an invoice Partially Paid when only part of the balance is settled', () => {
+  it('leaves an invoice Partially Paid when only part of the balance is settled', async () => {
     const db = useStore.getState().db;
     const open = invoiceViews(db, '2026-09-13').find((i) => i.balance > 100 && i.dueDate >= '2026-09-13')!;
-    recordPayment(
+    await recordPayment(
       { invoiceId: open.id, customerId: open.customerId, amount: 50, mode: 'Cash', reference: 'TEST-2', paymentDate: '2026-09-13', remarks: '' },
       USER,
     );

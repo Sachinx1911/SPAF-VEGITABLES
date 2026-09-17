@@ -174,10 +174,21 @@ export function PlaceOrderPage() {
 
   /* ------------------------------------------------------------ submitting */
 
-  const send = () => {
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
     const lines = basket.lines.map((l) => ({ itemId: l.itemId, unit: l.unit, qty: l.qty, rate: l.rate }));
-    if (existing) amendOrder(existing.id, lines, user.id);
-    else createOrder({ customerId: customer.id, deliveryDate, source: 'Customer Portal', lines }, user.id);
+    setSending(true);
+    try {
+      if (existing) await amendOrder(existing.id, lines, user.id);
+      else await createOrder({ customerId: customer.id, deliveryDate, source: 'Customer Portal', lines }, user.id);
+    } catch (e) {
+      // The confirmation screen must never appear for an order that was not
+      // taken — the customer would stop expecting a delivery that is not coming.
+      setSending(false);
+      return toast({ tone: 'error', title: 'Order not placed', description: (e as Error).message });
+    }
+    setSending(false);
     setReviewOpen(false);
     setSubmitted(true);
   };

@@ -16,10 +16,17 @@ export function RejectOrderModal({ order, onClose }: { order: Order | null; onCl
   const [error, setError] = useState(false);
   const customer = order ? db.customers.find((c) => c.id === order.customerId) : null;
 
-  const submit = () => {
+  const submit = async () => {
     if (!order) return;
     if (!reason.trim()) return setError(true);
-    rejectOrder(order.id, reason.trim(), user.id);
+
+    try {
+      await rejectOrder(order.id, reason.trim(), user.id);
+    } catch (e) {
+      // The modal stays open with the reason intact, so nothing is retyped.
+      return toast({ tone: 'error', title: 'Could not reject', description: (e as Error).message });
+    }
+
     toast({ tone: 'success', title: 'Order rejected', description: order.orderNo });
     setReason('');
     setError(false);

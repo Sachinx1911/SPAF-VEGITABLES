@@ -4,6 +4,8 @@ import { uid } from '../lib/id';
 import { nowISO, todayISO } from '../lib/clock';
 import { addDays } from '../lib/format';
 import { isPastCutoff } from '../domain/orders';
+import { API_MODE } from '../lib/api';
+import { amendOrderApi, approveOrderApi, createOrderApi, fetchOrder, rejectOrderApi } from './ordersApi';
 
 const emptyChain = (ordered: number): QtyChain => ({
   ordered, approved: null, purchased: null, received: null, accepted: null, allocated: null, packed: null,
@@ -36,8 +38,40 @@ function auditRow(userId: string, action: string, module: string, recordRef: str
 
 let orderSeq = 1000;
 
+/**
+ * Pulls one order back from the server and refreshes it in the store, so the
+ * screen that just wrote shows what was actually recorded rather than a guess.
+ */
+async function refreshOrder(orderId: string): Promise<void> {
+  const { order, lines } = await fetchOrder(orderId);
+  useStore.getState().commit((d) => ({
+    orders: [...d.orders.filter((o) => o.id !== order.id), order],
+    orderItems: [...d.orderItems.filter((l) => l.orderId !== order.id), ...lines],
+  }));
+}
+
 /** Creates a new order, flagging it Late automatically if it arrives after the cutoff. */
-export function createOrder(input: NewOrderInput, userId: string): Order {
+export async function createOrder(input: NewOrderInput, userId: string): Promise<Order> {
+  if (API_MODE) {
+    // The server decides the order number, the late flag and every rate, so
+    // none of them can be set from a browser tab.
+    const order = await createOrderApi({
+      customerId: input.customerId,
+      deliveryDate: input.deliveryDate,
+      orderType: input.orderType,
+      source: input.source,
+      draft: input.draft,
+      remarks: input.remarks,
+      lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, remarks: l.remarks })),
+    });
+    await refreshOrder(order.id);
+    return order;
+  }
+
+  return createOrderLocal(input, userId);
+}
+
+function createOrderLocal(input: NewOrderInput, userId: string): Order {
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const today = todayISO();
@@ -86,7 +120,17 @@ export function createOrder(input: NewOrderInput, userId: string): Order {
  * today's order" lands. Approval is withdrawn on every change, so the ops team always
  * sees the final list before it reaches consolidation.
  */
-export function amendOrder(orderId: string, lines: NewOrderLine[], userId: string): Order {
+export async function amendOrder(orderId: string, lines: NewOrderLine[], userId: string): Promise<Order> {
+  if (API_MODE) {
+    const order = await amendOrderApi(orderId, lines.map((l) => ({ itemId: l.itemId, qty: l.qty })));
+    await refreshOrder(orderId);
+    return order;
+  }
+
+  return amendOrderLocal(orderId, lines, userId);
+}
+
+function amendOrderLocal(orderId: string, lines: NewOrderLine[], userId: string): Order {
   const { db, commit } = useStore.getState();
   const order = db.orders.find((o) => o.id === orderId)!;
   const now = nowISO();
@@ -114,7 +158,17 @@ export function amendOrder(orderId: string, lines: NewOrderLine[], userId: strin
   return updated;
 }
 
-export function approveOrder(orderId: string, userId: string, adjustments?: Record<string, number>) {
+export async function approveOrder(orderId: string, userId: string, adjustments?: Record<string, number>): Promise<void> {
+  if (API_MODE) {
+    await approveOrderApi(orderId, adjustments);
+    await refreshOrder(orderId);
+    return;
+  }
+
+  approveOrderLocal(orderId, userId, adjustments);
+}
+
+function approveOrderLocal(orderId: string, userId: string, adjustments?: Record<string, number>) {
   const { commit } = useStore.getState();
   const now = nowISO();
   commit((d) => ({
@@ -126,7 +180,17 @@ export function approveOrder(orderId: string, userId: string, adjustments?: Reco
   }));
 }
 
-export function rejectOrder(orderId: string, reason: string, userId: string) {
+export async function rejectOrder(orderId: string, reason: string, userId: string): Promise<void> {
+  if (API_MODE) {
+    await rejectOrderApi(orderId, reason);
+    await refreshOrder(orderId);
+    return;
+  }
+
+  rejectOrderLocal(orderId, reason, userId);
+}
+
+function rejectOrderLocal(orderId: string, reason: string, userId: string) {
   const { db, commit } = useStore.getState();
   const order = db.orders.find((o) => o.id === orderId);
   commit((d) => ({

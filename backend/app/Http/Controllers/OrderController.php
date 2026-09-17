@@ -24,7 +24,7 @@ class OrderController extends Controller
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
         ]);
 
-        $orders = Order::with('customer:id,name,code')
+        $orders = Order::with(['customer:id,name,code', 'lines'])
             ->when($data['delivery_date'] ?? null, fn ($q, $d) => $q->whereDate('delivery_date', $d))
             ->when($data['from'] ?? null, fn ($q, $d) => $q->whereDate('delivery_date', '>=', $d))
             ->when($data['to'] ?? null, fn ($q, $d) => $q->whereDate('delivery_date', '<=', $d))
@@ -33,6 +33,25 @@ class OrderController extends Controller
             ->orderByDesc('delivery_date')
             ->orderByDesc('id')
             ->paginate($data['per_page'] ?? 50);
+
+        // The same shape the front end's own model uses, so a list row needs no
+        // translating on arrival — and the lines come with it, because every
+        // screen that lists orders also shows what is on them.
+        $orders->getCollection()->transform(fn (Order $o) => $o->toPortableArray() + [
+            'customerName' => $o->customer?->name,
+            'customerCode' => $o->customer?->code,
+            'lineCount' => $o->lines->count(),
+            'value' => $o->value(),
+            'lines' => $o->lines->map(fn (OrderItem $l) => [
+                'id' => (string) $l->id,
+                'orderId' => (string) $l->order_id,
+                'itemId' => (string) $l->item_id,
+                'unit' => $l->unit,
+                'rate' => (float) $l->rate,
+                'qty' => $l->chain(),
+                'remarks' => $l->remarks ?? '',
+            ]),
+        ]);
 
         return response()->json($orders);
     }

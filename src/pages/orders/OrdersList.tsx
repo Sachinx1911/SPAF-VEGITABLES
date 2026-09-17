@@ -129,7 +129,15 @@ export function OrdersListPage() {
 
   const doApprove = async (o: Order) => {
     const ok = await confirm({ title: 'Approve this order?', description: `${o.orderNo} · ${custById.get(o.customerId)?.name}`, confirmLabel: 'Approve' });
-    if (ok) { approveOrder(o.id, user.id); toast({ tone: 'success', title: 'Order approved', description: o.orderNo }); }
+    if (!ok) return;
+    try {
+      await approveOrder(o.id, user.id);
+      toast({ tone: 'success', title: 'Order approved', description: o.orderNo });
+    } catch (e) {
+      // The server can refuse — an order already locked, for instance — and the
+      // operator has to know that rather than see a success they did not get.
+      toast({ tone: 'error', title: 'Could not approve', description: (e as Error).message });
+    }
   };
 
   const approveSelected = async () => {
@@ -137,9 +145,14 @@ export function OrdersListPage() {
     if (!list.length) return toast({ tone: 'error', title: 'Nothing to approve in the selection' });
     const ok = await confirm({ title: `Approve ${list.length} orders?`, confirmLabel: 'Approve all' });
     if (!ok) return;
-    list.forEach((o) => approveOrder(o.id, user.id));
+    const results = await Promise.allSettled(list.map((o) => approveOrder(o.id, user.id)));
+    const failed = results.filter((r) => r.status === 'rejected').length;
     setSelected(new Set());
-    toast({ tone: 'success', title: `${list.length} orders approved` });
+
+    // Reported honestly: a partial success is not a success.
+    if (failed === 0) toast({ tone: 'success', title: `${list.length} orders approved` });
+    else if (failed === list.length) toast({ tone: 'error', title: 'None could be approved' });
+    else toast({ tone: 'warning', title: `${list.length - failed} approved, ${failed} failed` });
   };
 
   const exportCsv = () =>

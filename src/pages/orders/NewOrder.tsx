@@ -120,7 +120,7 @@ export function NewOrderPage() {
       });
       if (!ok) return;
     }
-    const order = createOrder(
+    const order = await createOrder(
       {
         customerId, deliveryDate, source: 'Staff', draft,
         orderType: orderType === 'Regular' ? 'Regular' : orderType,

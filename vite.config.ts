@@ -30,4 +30,11 @@ export default defineConfig({
     // Source maps would expose the full readable source on a public host.
     sourcemap: false,
   },
+  test: {
+    // The unit tests cover the browser-side logic, so they must run in demo
+    // mode whatever a developer happens to have in .env.local. Without this a
+    // local VITE_API_URL sends them at a real server and they fail as
+    // unauthenticated.
+    env: { VITE_API_URL: '' },
+  },
 });

@@ -114,7 +114,13 @@ export function OrderDetailPage() {
 
   const doApprove = async () => {
     const ok = await confirm({ title: 'Approve this order?', description: `${order.orderNo} · ${customer.name}`, confirmLabel: 'Approve' });
-    if (ok) { approveOrder(order.id, user.id); toast({ tone: 'success', title: 'Order approved' }); }
+    if (!ok) return;
+    try {
+      await approveOrder(order.id, user.id);
+      toast({ tone: 'success', title: 'Order approved' });
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not approve', description: (e as Error).message });
+    }
   };
 
   const exportItems = () =>
