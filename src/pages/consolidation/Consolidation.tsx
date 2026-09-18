@@ -11,6 +11,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { lockConsolidation } from '../../store/orderActions';
+import { useOrdersSync } from '../../store/useApiSync';
 import { buildConsolidation } from '../../domain/orders';
 import { CATEGORIES, UNITS, type Category } from '../../types/models';
 import { addDays, fmtDate, inr, num } from '../../lib/format';
@@ -50,9 +51,17 @@ export function ConsolidationPage() {
   const [unit, setUnit] = useState('');
   const [onlyWithQty, setOnlyWithQty] = useState(true);
 
+  // In API mode this fills the store with the day's orders and their lines, so
+  // buildConsolidation works off the same tables the demo build uses. In demo
+  // mode it does nothing and the seeded orders stand.
+  const { refresh: refreshOrders } = useOrdersSync({ deliveryDate: date });
+
   const matrix = useMemo(() => buildConsolidation(db, date), [db, date]);
   const lock = db.locks.find((l) => l.deliveryDate === date);
-  const isLocked = !!lock;
+  // Locked either by a demo-mode lock record, or — in API mode, where no such
+  // record is kept — by the orders themselves having been moved to Locked. The
+  // latter survives a reload, so a locked day still reads as locked.
+  const isLocked = !!lock || matrix.orders.some((o) => o.status === 'Locked');
   const pendingOrders = db.orders.filter((o) => o.deliveryDate === date && (o.status === 'Submitted' || o.status === 'Late'));
 
   /* ---------------------------------------------------------------- rows */
@@ -122,7 +131,13 @@ export function ConsolidationPage() {
       ],
     });
     if (!ok) return;
-    lockConsolidation(date, user.id);
+    try {
+      await lockConsolidation(date, user.id);
+      await refreshOrders();
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not lock consolidation', description: (e as Error).message });
+      return;
+    }
     toast({ tone: 'success', title: 'Purchase requirement generated', description: 'Consolidation locked for this date.' });
   };
 

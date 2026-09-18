@@ -5,7 +5,8 @@ import { nowISO, todayISO } from '../lib/clock';
 import { addDays } from '../lib/format';
 import { isPastCutoff } from '../domain/orders';
 import { API_MODE } from '../lib/api';
-import { amendOrderApi, approveOrderApi, createOrderApi, fetchOrder, rejectOrderApi } from './ordersApi';
+import { amendOrderApi, approveOrderApi, createOrderApi, fetchOrder, fetchOrders, rejectOrderApi } from './ordersApi';
+import { lockConsolidationApi } from './consolidationApi';
 
 const emptyChain = (ordered: number): QtyChain => ({
   ordered, approved: null, purchased: null, received: null, accepted: null, allocated: null, packed: null,
@@ -199,8 +200,45 @@ function rejectOrderLocal(orderId: string, reason: string, userId: string) {
   }));
 }
 
+/**
+ * Refreshes every order for a delivery date from the server, so a screen that
+ * locked (or approved) the day reflects the recorded statuses rather than a
+ * guess. Replaces only that date's orders and their lines.
+ */
+async function refreshOrdersForDate(deliveryDate: string): Promise<void> {
+  const { orders, lines } = await fetchOrders({ deliveryDate });
+  const ids = new Set(orders.map((o) => o.id));
+  useStore.getState().commit((d) => ({
+    // Drop every order previously held for this date and replace with the
+    // server's set, so a status the server changed is reflected and nothing
+    // stale lingers.
+    orders: [...d.orders.filter((o) => o.deliveryDate !== deliveryDate), ...orders],
+    orderItems: [...d.orderItems.filter((l) => !ids.has(l.orderId)), ...lines],
+  }));
+}
+
 /** Locks every approved order for a delivery date and snapshots the purchase requirement. */
-export function lockConsolidation(deliveryDate: string, userId: string) {
+export async function lockConsolidation(deliveryDate: string, userId: string): Promise<void> {
+  if (API_MODE) {
+    // The server locks the orders and writes the purchase requirement in one
+    // transaction. We then re-read the day so the board shows Locked, and drop a
+    // lock marker into the store so the same "is this date locked?" check the
+    // demo build uses keeps working unchanged.
+    await lockConsolidationApi(deliveryDate);
+    await refreshOrdersForDate(deliveryDate);
+    useStore.getState().commit((d) => ({
+      locks: [
+        ...d.locks.filter((l) => l.deliveryDate !== deliveryDate),
+        { id: uid('lk'), deliveryDate, lockedAt: nowISO(), lockedBy: userId, orderIds: [] },
+      ],
+    }));
+    return;
+  }
+
+  lockConsolidationLocal(deliveryDate, userId);
+}
+
+function lockConsolidationLocal(deliveryDate: string, userId: string) {
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const orders = db.orders.filter((o) => o.deliveryDate === deliveryDate && o.status === 'Approved');
