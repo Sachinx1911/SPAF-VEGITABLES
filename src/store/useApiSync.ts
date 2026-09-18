@@ -2,11 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { API_MODE } from '../lib/api';
 import { useStore } from './useStore';
 import { fetchOrders, type OrderQuery } from './ordersApi';
+import { fetchCustomers, fetchItems, fetchRoutes, fetchSuppliers } from './mastersApi';
+import { fetchConsolidation } from './consolidationApi';
+import { fetchOutstanding } from './financeApi';
+import { fetchInvoices } from './financeApi';
 
 /**
  * Fills the store from the API so the screens can stay as they are.
  *
- * Every page already reads `db.orders`, `db.orderItems` and so on. Rather than
+ * Every page already reads `db.orders`, `db.customers` and so on. Rather than
  * rewriting each one to fetch and await, the store becomes a cache that the
  * server fills instead of the seed. Pages keep their synchronous reads; only
  * where the data comes from changes.
@@ -54,7 +58,6 @@ function useSync(run: () => Promise<void>, deps: unknown[]): SyncState {
  */
 export function useOrdersSync(query: OrderQuery = {}): SyncState {
   const commit = useStore((s) => s.commit);
-
   const key = JSON.stringify(query);
 
   return useSync(async () => {
@@ -66,4 +69,68 @@ export function useOrdersSync(query: OrderQuery = {}): SyncState {
       orderItems: [...db.orderItems.filter((l) => !ids.has(l.orderId)), ...lines],
     }));
   }, [key, commit]);
+}
+
+/**
+ * Loads the reference tables once, after sign-in.
+ *
+ * Customers, items and routes are read by nearly every screen and change rarely,
+ * so they are fetched together rather than per page. Until they land the app has
+ * only the seeded copies, which is why the shell waits on this.
+ */
+export function useMastersSync(): SyncState {
+  const commit = useStore((s) => s.commit);
+  const signedIn = useStore((s) => !!s.session);
+
+  return useSync(async () => {
+    if (!signedIn) return;
+
+    const [customers, items, routes, suppliers] = await Promise.all([
+      fetchCustomers(),
+      fetchItems(),
+      fetchRoutes(),
+      // A warehouse or accounts login cannot see suppliers, and that is not an
+      // error — the rest of the masters still load.
+      fetchSuppliers().catch(() => []),
+    ]);
+
+    commit(() => ({ customers, items, routes, suppliers }));
+  }, [signedIn, commit]);
+}
+
+/**
+ * Loads a day's consolidation matrix.
+ *
+ * The matrix itself is returned by the server rather than summed here — the
+ * same arithmetic feeds the purchase requirement, and computing it twice in two
+ * languages is how the two quietly drift apart.
+ */
+export function useConsolidationSync(deliveryDate: string) {
+  const [matrix, setMatrix] = useState<Awaited<ReturnType<typeof fetchConsolidation>> | null>(null);
+  const state = useSync(async () => {
+    setMatrix(await fetchConsolidation(deliveryDate));
+  }, [deliveryDate]);
+
+  return { ...state, matrix };
+}
+
+/** Customer-wise dues with their aging buckets, worked out server-side. */
+export function useOutstandingSync(asOf?: string) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchOutstanding>> | null>(null);
+  const state = useSync(async () => {
+    setData(await fetchOutstanding(asOf));
+  }, [asOf]);
+
+  return { ...state, data };
+}
+
+/** Invoices, with the derived status the server computes on the way out. */
+export function useInvoicesSync(query: Parameters<typeof fetchInvoices>[0] = {}) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchInvoices>> | null>(null);
+  const key = JSON.stringify(query);
+  const state = useSync(async () => {
+    setData(await fetchInvoices(query));
+  }, [key]);
+
+  return { ...state, data };
 }

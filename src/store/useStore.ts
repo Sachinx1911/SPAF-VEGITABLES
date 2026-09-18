@@ -37,7 +37,39 @@ const safeStorage: StateStorage = {
   },
 };
 
+/**
+ * An empty database with the seed's shape.
+ *
+ * API mode starts here rather than from the seed. Mixing the two is worse than
+ * either: the server's real customers would sit beside two hundred invented
+ * orders that reference customers no longer present, and every lookup those
+ * screens do would come back empty. Data either comes from the server or is not
+ * there yet.
+ *
+ * Roles and settings are kept so the shell can render before the first fetch
+ * lands; both are replaced by the server's copies.
+ */
+function emptyDb(): Database {
+  const seed = generateSeed();
+
+  return {
+    ...seed,
+    customers: [], items: [], prices: [], suppliers: [], routes: [],
+    orders: [], orderItems: [], locks: [], requirements: [],
+    purchaseOrders: [], purchaseOrderItems: [],
+    receivings: [], receivingItems: [], qualityChecks: [],
+    allocations: [], packings: [], packingItems: [], challans: [],
+    invoices: [], invoiceItems: [], payments: [], openingBalances: [],
+    standingTemplates: [], auditLogs: [], snapshots: [],
+    users: [],
+  };
+}
+
 function initialDb(): Database {
+  // A cached demo database must never be shown once a real backend is
+  // configured — it would look like live data and read like nonsense.
+  if (API_MODE) return emptyDb();
+
   try {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) {
@@ -175,7 +207,9 @@ export const useStore = create<DataState>()(
       // The API session is never persisted: the token decides whether it is
       // still valid, and a stale copy here would show a signed-in shell to
       // somebody the server has already logged out.
-      partialize: (s) => (API_MODE ? { db: s.db } : { db: s.db, session: s.session }),
+      // In API mode nothing is persisted: the store is a cache of the server,
+      // and a stale copy surviving a reload would be shown as if it were current.
+      partialize: (s) => (API_MODE ? ({} as never) : { db: s.db, session: s.session }),
       migrate: () => ({ db: generateSeed(), session: null }) as never,
     },
   ),

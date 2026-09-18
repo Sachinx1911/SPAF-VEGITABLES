@@ -4,8 +4,13 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useCurrentUser } from '../../store/useStore';
+import { useMastersSync } from '../../store/useApiSync';
 
 export function AppShell() {
+  // Reference tables come from the server the moment a session exists, so
+  // every screen below reads the same customers, items and routes.
+  useMastersSync();
+
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const user = useCurrentUser();
 

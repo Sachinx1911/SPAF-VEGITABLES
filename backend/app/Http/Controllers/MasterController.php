@@ -40,6 +40,9 @@ class MasterController extends Controller
             ->orderBy('route_order')
             ->paginate($data['per_page'] ?? 100);
 
+        // The front end's own shape, so a row needs no translating on arrival.
+        $customers->getCollection()->transform(fn (Customer $c) => $c->toPortableArray());
+
         return response()->json($customers);
     }
 

@@ -15,6 +15,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { approveOrder } from '../../store/orderActions';
+import { useOrdersSync } from '../../store/useApiSync';
 import { can } from '../../lib/nav';
 import type { Order } from '../../types/models';
 import { addDays, fmtDate, fmtTime, inr } from '../../lib/format';
@@ -44,6 +45,10 @@ const MATCHES: Record<TabKey, (o: Order) => boolean> = {
 };
 
 export function OrdersListPage() {
+  // Orders come from the server when one is configured; the page keeps its
+  // synchronous reads either way.
+  useOrdersSync();
+
   const db = useDb();
   const user = useCurrentUser()!;
   const nav = useNavigate();

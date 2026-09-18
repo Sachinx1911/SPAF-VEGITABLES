@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router';
 import { CalendarClock, FileText, History, Sprout, Truck, UserRound } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useCurrentUser } from '../../store/useStore';
+import { useMastersSync } from '../../store/useApiSync';
 import { initials } from '../../lib/format';
 
 const TABS = [
@@ -14,6 +15,10 @@ const TABS = [
 
 /** Driver mobile app: big touch targets for confirming deliveries outdoors. */
 export function DriverShell() {
+  // Reference tables come from the server the moment a session exists, so
+  // every screen below reads the same customers, items and routes.
+  useMastersSync();
+
   const user = useCurrentUser();
 
   return (

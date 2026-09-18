@@ -36,7 +36,7 @@ export function deriveNotifications(db: Database, today: string, nowIso: string)
   for (const o of db.orders.filter((x) => x.status === 'Late')) {
     out.push({
       id: `late:${o.id}`, type: 'Late Order', priority: 'High',
-      title: `Late order · ${cust.get(o.customerId)?.name}`,
+      title: `Late order · ${cust.get(o.customerId)?.name ?? 'Unknown customer'}`,
       message: `${o.orderNo} received after ${db.settings.orderCutoffTime} cutoff for ${fmtDate(o.deliveryDate)} delivery. Approve or reject.`,
       at: o.receivedAt, link: `/orders?status=Late`,
     });
@@ -54,7 +54,10 @@ export function deriveNotifications(db: Database, today: string, nowIso: string)
 
   const reqs = requirementRows(db, today);
   for (const r of reqs.filter((x) => x.status !== 'OK')) {
-    const it = item.get(r.itemId)!;
+    // A notification is never worth crashing the shell for: if the item is not
+    // loaded, skip this one rather than take the whole header down with it.
+    const it = item.get(r.itemId);
+    if (!it) continue;
     out.push({
       id: `purchase:${today}:${r.itemId}`, type: 'Purchase Required', priority: r.status === 'Critical' ? 'High' : 'Medium',
       title: `${it.name} — ${qty(r.toPurchase, r.unit)} still to buy`,
@@ -63,7 +66,8 @@ export function deriveNotifications(db: Database, today: string, nowIso: string)
     });
   }
   for (const r of reqs.filter((x) => x.shortage > 0)) {
-    const it = item.get(r.itemId)!;
+    const it = item.get(r.itemId);
+    if (!it) continue;
     const affected = db.allocations.filter((a) => a.deliveryDate === today && a.itemId === r.itemId && a.allocatedQty < a.requiredQty).length;
     out.push({
       id: `short:${today}:${r.itemId}`, type: 'Shortage', priority: 'High',
@@ -77,7 +81,7 @@ export function deriveNotifications(db: Database, today: string, nowIso: string)
   for (const p of packs.filter((x) => x.status === 'Issue')) {
     out.push({
       id: `packissue:${p.id}`, type: 'Packing Issue', priority: 'High',
-      title: `Packing issue · ${cust.get(p.customerId)?.name}`, message: p.issue,
+      title: `Packing issue · ${cust.get(p.customerId)?.name ?? 'Unknown customer'}`, message: p.issue,
       at: p.startedAt ?? nowIso, link: '/packing',
     });
   }
@@ -118,7 +122,7 @@ export function deriveNotifications(db: Database, today: string, nowIso: string)
   for (const [customerId, v] of overdueBy) {
     out.push({
       id: `overdue:${customerId}:${v.count}`, type: 'Overdue Invoice', priority: v.days > 60 ? 'High' : 'Medium',
-      title: `${cust.get(customerId)?.name} · ${inr(v.amount)} overdue`,
+      title: `${cust.get(customerId)?.name ?? 'Unknown customer'} · ${inr(v.amount)} overdue`,
       message: `${v.count} invoice${v.count > 1 ? 's' : ''}, oldest ${v.days} days past due.`,
       at: `${today}T08:00:00`, link: '/outstanding',
     });

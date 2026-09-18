@@ -41,10 +41,20 @@ export function toISODateTime(d: Date): string {
 }
 
 export function parseISO(s: string): Date {
+  // A string carrying a zone is a real instant — the server sends UTC with
+  // microseconds — so let the platform parse it and render it in local time.
+  // Splitting it by hand turned "12:52:08.000000Z" into NaN seconds.
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)) {
+    const parsed = new Date(s);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  // The seeded data has no zone: read it as local wall-clock time, which is
+  // what the demo intends.
   const [datePart, timePart = '00:00:00'] = s.split('T');
   const [y, m, d] = datePart.split('-').map(Number);
-  const [hh, mm, ss = 0] = timePart.split(':').map(Number);
-  return new Date(y, m - 1, d, hh, mm, ss);
+  const [hh, mm, ss = 0] = timePart.split(':').map((v) => Number.parseFloat(v));
+  return new Date(y, m - 1, d, hh, mm, Math.floor(ss) || 0);
 }
 
 /** DD-MM-YYYY */
