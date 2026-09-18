@@ -4,6 +4,8 @@ import type {
 import { useStore } from './useStore';
 import { uid } from '../lib/id';
 import { nowISO } from '../lib/clock';
+import { API_MODE } from '../lib/api';
+import { createPurchaseOrderApi } from './procurementApi';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, oldValue: string, newValue: string, status: 'Success' | 'Warning' = 'Success') {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId: null, oldValue, newValue, device: 'Chrome · Windows', status };
@@ -20,10 +22,34 @@ export interface NewPurchaseLine {
   remarks?: string;
 }
 
-export function createPurchaseOrder(
+export interface PurchaseResult {
+  poNo: string;
+}
+
+export async function createPurchaseOrder(
   input: { supplierId: string; purchaseDate: string; forDeliveryDate: string; supplierInvoiceNo: string; lines: NewPurchaseLine[] },
   userId: string,
-): PurchaseOrder {
+): Promise<PurchaseResult> {
+  if (API_MODE) {
+    // The server records the purchase against its own PO number and looks up
+    // nothing from the browser but the item, quantity and rate the buyer typed.
+    const res = await createPurchaseOrderApi({
+      supplierId: input.supplierId,
+      purchaseDate: input.purchaseDate,
+      forDeliveryDate: input.forDeliveryDate,
+      supplierInvoiceNo: input.supplierInvoiceNo,
+      lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, rate: l.rate })),
+    });
+    return { poNo: res.poNo };
+  }
+
+  return createPurchaseOrderLocal(input, userId);
+}
+
+function createPurchaseOrderLocal(
+  input: { supplierId: string; purchaseDate: string; forDeliveryDate: string; supplierInvoiceNo: string; lines: NewPurchaseLine[] },
+  userId: string,
+): PurchaseResult {
   const { commit } = useStore.getState();
   const po: PurchaseOrder = {
     id: uid('po'), poNo: `PO-2609-${String(++poSeq).padStart(4, '0')}`, supplierId: input.supplierId, purchaseDate: input.purchaseDate,
@@ -36,7 +62,7 @@ export function createPurchaseOrder(
     purchaseOrderItems: [...d.purchaseOrderItems, ...lines],
     auditLogs: [auditRow(userId, 'Purchase confirmed', 'purchase', po.poNo, '', `${lines.length} items`), ...d.auditLogs],
   }));
-  return po;
+  return { poNo: po.poNo };
 }
 
 export interface ReceiveLine {

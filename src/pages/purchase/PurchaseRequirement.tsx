@@ -6,7 +6,8 @@ import { Button } from '../../components/ui/Button';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { useDb } from '../../store/useStore';
-import { requirementRows, type RequirementRow } from '../../domain/ops';
+import { useRequirementsSync } from '../../store/useApiSync';
+import { requirementRows } from '../../domain/ops';
 import { addDays, qty } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
 
@@ -17,7 +18,12 @@ export function PurchaseRequirementPage() {
   const [date, setDate] = useState(addDays(today, 1));
 
   const itemById = new Map(db.items.map((i) => [i.id, i]));
-  const rows = useMemo(() => requirementRows(db, date), [db, date]);
+  // In API mode the requirement is computed server-side from the locked
+  // consolidation; in demo mode it is worked out from the local store. Both
+  // arrive in the same shape.
+  const { rows: apiRows } = useRequirementsSync(date);
+  const localRows = useMemo(() => requirementRows(db, date), [db, date]);
+  const rows = apiRows ?? localRows;
   const withNames = rows.map((r) => ({ ...r, name: itemById.get(r.itemId)?.name ?? r.itemId, category: itemById.get(r.itemId)?.category ?? '' }));
 
   const columns: Column<typeof withNames[number]>[] = [

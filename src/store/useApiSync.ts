@@ -6,6 +6,9 @@ import { fetchCustomers, fetchItems, fetchRoutes, fetchSuppliers } from './maste
 import { fetchConsolidation } from './consolidationApi';
 import { fetchOutstanding } from './financeApi';
 import { fetchInvoices } from './financeApi';
+import { fetchRequirements } from './procurementApi';
+import type { RequirementStatus } from '../domain/ops';
+import type { Unit } from '../types/models';
 
 /**
  * Fills the store from the API so the screens can stay as they are.
@@ -122,6 +125,45 @@ export function useOutstandingSync(asOf?: string) {
   }, [asOf]);
 
   return { ...state, data };
+}
+
+/**
+ * The purchase requirement for a delivery date, worked out server-side after the
+ * consolidation is locked.
+ *
+ * Returns rows in the same shape the demo build's `requirementRows` produces, so
+ * the page renders one or the other without knowing which. `null` while it loads
+ * or in demo mode, where the page falls back to the local computation.
+ */
+export interface RequirementViewRow {
+  itemId: string;
+  unit: Unit;
+  required: number;
+  stock: number;
+  purchased: number;
+  toPurchase: number;
+  status: RequirementStatus;
+}
+
+export function useRequirementsSync(deliveryDate: string) {
+  const [rows, setRows] = useState<RequirementViewRow[] | null>(null);
+  const state = useSync(async () => {
+    const res = await fetchRequirements(deliveryDate);
+    setRows(res.rows.map((r) => {
+      // The server calls a fully-covered line OK and anything short Required;
+      // the demo build additionally flags a line Critical when most of it is
+      // still to buy. Re-derive that here so both paths colour the same.
+      const ratio = r.requiredQty > 0 ? r.toBuyQty / r.requiredQty : 0;
+      const status: RequirementStatus =
+        r.toBuyQty <= 0 ? 'OK' : ratio > 0.3 ? 'Critical' : 'Purchase Required';
+      return {
+        itemId: r.itemId, unit: r.unit, required: r.requiredQty, stock: r.stockQty,
+        purchased: r.purchasedQty, toPurchase: r.toBuyQty, status,
+      };
+    }));
+  }, [deliveryDate]);
+
+  return { ...state, rows };
 }
 
 /** Invoices, with the derived status the server computes on the way out. */

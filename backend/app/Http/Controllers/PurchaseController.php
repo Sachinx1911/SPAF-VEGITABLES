@@ -26,12 +26,16 @@ class PurchaseController extends Controller
             ->whereDate('delivery_date', $date)
             ->get();
 
-        // Everything already on a purchase order for this date, per item.
+        // Everything already on a purchase order for this date, per item. The
+        // sum is aliased: plucking a bare DB::raw('SUM(...)') makes Laravel look
+        // for a property literally named "SUM(...)" on each row, which is not
+        // there, so the endpoint 500s the moment any purchase exists for the day.
         $purchased = PurchaseOrderItem::query()
             ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
             ->whereDate('purchase_orders.for_delivery_date', $date)
             ->groupBy('purchase_order_items.item_id')
-            ->pluck(DB::raw('SUM(purchase_order_items.qty)'), 'purchase_order_items.item_id');
+            ->selectRaw('purchase_order_items.item_id as item_id, SUM(purchase_order_items.qty) as total')
+            ->pluck('total', 'item_id');
 
         $rows = $requirements->map(function (PurchaseRequirement $r) use ($purchased) {
             $already = (float) ($purchased[$r->item_id] ?? 0);

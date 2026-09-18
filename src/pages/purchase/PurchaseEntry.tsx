@@ -8,6 +8,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { createPurchaseOrder } from '../../store/procurementActions';
+import { useRequirementsSync } from '../../store/useApiSync';
 import { requirementRows } from '../../domain/ops';
 import { addDays, inr, qty } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
@@ -33,8 +34,11 @@ export function PurchaseEntryPage() {
   const [invoiceNo, setInvoiceNo] = useState('');
   const [lines, setLines] = useState<Line[]>([{ itemId: '', qty: null, rate: null, remarks: '' }]);
 
-  const reqs = useMemo(() => requirementRows(db, forDeliveryDate), [db, forDeliveryDate]);
-  const reqByItem = new Map(reqs.map((r) => [r.itemId, r]));
+  // Drives the "you are buying more than is still needed" warning. Server-side
+  // in API mode, from the local store in demo mode.
+  const { rows: apiReqs } = useRequirementsSync(forDeliveryDate);
+  const localReqs = useMemo(() => requirementRows(db, forDeliveryDate), [db, forDeliveryDate]);
+  const reqByItem = new Map((apiReqs ?? localReqs).map((r) => [r.itemId, r]));
   const itemById = new Map(db.items.map((i) => [i.id, i]));
   const items = db.items.filter((i) => i.active && (!supplierId || true));
 
@@ -65,13 +69,19 @@ export function PurchaseEntryPage() {
       details: [{ label: 'Items', value: validLines.length }, { label: 'Total', value: inr(subtotal + taxAmount) }],
     });
     if (!ok) return;
-    const po = createPurchaseOrder(
-      {
-        supplierId, purchaseDate: today, forDeliveryDate, supplierInvoiceNo: invoiceNo || `PENDING-${Date.now().toString(36).toUpperCase()}`,
-        lines: validLines.map((l) => ({ itemId: l.itemId, unit: itemById.get(l.itemId)!.unit, qty: l.qty!, rate: l.rate!, remarks: l.remarks })),
-      },
-      user.id,
-    );
+    let po;
+    try {
+      po = await createPurchaseOrder(
+        {
+          supplierId, purchaseDate: today, forDeliveryDate, supplierInvoiceNo: invoiceNo || `PENDING-${Date.now().toString(36).toUpperCase()}`,
+          lines: validLines.map((l) => ({ itemId: l.itemId, unit: itemById.get(l.itemId)!.unit, qty: l.qty!, rate: l.rate!, remarks: l.remarks })),
+        },
+        user.id,
+      );
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not save the purchase', description: (e as Error).message });
+      return;
+    }
     toast({ tone: 'success', title: 'Purchase confirmed', description: po.poNo });
     nav('/purchase');
   };
