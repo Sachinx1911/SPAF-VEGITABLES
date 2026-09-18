@@ -23,6 +23,13 @@ class DatabaseSeeder extends Seeder
 
         $this->seedSettings();
         $this->seedAdmin();
+
+        // The business's real routes, suppliers, 40 customers and ~125 items,
+        // with their price list. This is master data, not demo transactions —
+        // the app is unusable without it, and MasterSeeder is idempotent, so a
+        // reseed corrects it rather than duplicating. An operator importing
+        // their own current list instead can comment this out.
+        $this->call(MasterSeeder::class);
     }
 
     private function seedSettings(): void

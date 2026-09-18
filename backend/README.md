@@ -4,7 +4,7 @@ The server side of SPAF — Operations OS: MySQL schema, authentication,
 permissions, and the API the front end will read from.
 
 **Installed and exercised.** Run against Laravel 13 on a real database:
-migrations, seeders, the 37-test suite, and a full day walked end to end
+migrations, seeders, the 46-test suite, and a full day walked end to end
 through the HTTP API — order, approve, consolidate, lock, purchase, receive,
 quality check, allocate, pack, challan, dispatch, deliver short, invoice and
 settle. Nine bugs surfaced doing it; all are fixed. See "What is not here".
@@ -86,8 +86,6 @@ and Sanctum's migration has to be published before the first `migrate`.
 
 ## What is not here
 
-- **An importer** for the existing customer and item masters. The database
-  starts empty; masters go in through the UI, the CSV import, or by SQL.
 - **PDF rendering** for challans and invoices. The data is all there; only the
   printable output is missing.
 - **Notifications** — the front end derives them; the server pushes none.
@@ -145,6 +143,14 @@ php artisan migrate --seed
 ```
 
 The seeder prints the generated admin password once. Copy it — it is not stored.
+It also loads the real masters (5 routes, 5 suppliers, 40 customers, ~125 items
+and their price list) from `database/seeders/data/masters.json`, exported from
+the front end's own seed so the two never diverge. Re-run it any time — it is
+idempotent, keyed on each record's business code:
+
+```bash
+php artisan db:seed --class='Database\Seeders\MasterSeeder'
+```
 
 ### Environment
 
