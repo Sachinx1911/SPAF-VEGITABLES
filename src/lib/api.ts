@@ -133,7 +133,16 @@ async function request<T>(method: Method, path: string, options: RequestOptions 
 
   if (response.ok) return payload as T;
 
-  const message = typeof payload.message === 'string' ? payload.message : `Request failed (${response.status}).`;
+  // A 4xx message is written for the person reading it — "that invoice is
+  // already settled" — so it is shown as sent. A 5xx message is not: it is
+  // whatever the server happened to throw, and with APP_DEBUG on it carries
+  // internals (a stack trace, a hasher complaining about an algorithm) straight
+  // onto the sign-in form. Those are replaced with something a user can act on.
+  const message = response.status >= 500
+    ? 'Something went wrong at our end. Please try again in a moment.'
+    : typeof payload.message === 'string'
+      ? payload.message
+      : `Request failed (${response.status}).`;
 
   if (response.status === 401) {
     setToken(null);

@@ -86,6 +86,12 @@ return new class extends Migration
             // Laravel's own auth scaffolding and factories expect this column.
             $t->timestamp('email_verified_at')->nullable();
             $t->string('mobile', 20)->default('');
+            // The same number with the spaces, dashes and country code stripped.
+            // Login matches on this rather than on a SQL expression over
+            // `mobile`: an expression cannot use an index, and the functions
+            // that do it differ between MySQL and SQLite, so the tests and
+            // production would not be exercising the same lookup.
+            $t->string('mobile_digits', 10)->nullable()->index();
             // Bcrypt/Argon hash. Never a plain or shared password — that was the
             // prototype's single biggest hole.
             $t->string('password');

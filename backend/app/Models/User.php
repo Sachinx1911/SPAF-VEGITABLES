@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -38,6 +39,30 @@ class User extends Authenticatable
         ];
     }
 
+    /**
+     * Writing the mobile also writes its normalised form, so the two can never
+     * disagree. Doing it here rather than at each call site means a number typed
+     * into the admin screen, imported from a sheet or set by a seeder is all
+     * stored the same way.
+     */
+    protected function mobile(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value) => [
+                'mobile' => $value,
+                'mobile_digits' => self::normaliseMobile($value),
+            ],
+        );
+    }
+
+    /** Last ten digits, or null when there are not ten to take. */
+    public static function normaliseMobile(?string $value): ?string
+    {
+        $digits = preg_replace('/\D/', '', (string) $value);
+
+        return strlen($digits) >= 10 ? substr($digits, -10) : null;
+    }
+
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class, 'role_key', 'key');
@@ -57,16 +82,13 @@ class User extends Authenticatable
             return static::where('email', strtolower($identifier))->first();
         }
 
-        $digits = preg_replace('/\D/', '', $identifier);
+        $digits = self::normaliseMobile($identifier);
 
-        if (strlen($digits) < 10) {
+        if ($digits === null) {
             return null;
         }
 
-        return static::whereRaw(
-            "RIGHT(REPLACE(REPLACE(mobile, ' ', ''), '-', ''), 10) = ?",
-            [substr($digits, -10)]
-        )->first();
+        return static::where('mobile_digits', $digits)->first();
     }
 
     /**

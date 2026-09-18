@@ -20,6 +20,9 @@ use Illuminate\Validation\ValidationException;
  */
 class AuthController extends Controller
 {
+    /** A genuine bcrypt hash of a random value nobody holds. See login(). */
+    private const ABSENT_USER_HASH = '$2y$12$zPcshyNFnUyFM7a4wIfs7OsbvlElzj9WmxQe0V.oCJ63UEq/zjtVK';
+
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -40,7 +43,14 @@ class AuthController extends Controller
 
         // Hash::check runs even when no user matched, so a missing account and a
         // wrong password take the same time and cannot be told apart.
-        $hash = $user?->password ?? '$2y$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv';
+        //
+        // The placeholder must be a REAL bcrypt hash, not a filler string that
+        // merely looks like one: Laravel's hasher inspects the algorithm before
+        // comparing and throws on anything it does not recognise. A malformed
+        // placeholder therefore turns every unknown email into a 500 — which is
+        // precisely the account oracle this line exists to prevent. This is the
+        // hash of a discarded random value, so nothing verifies against it.
+        $hash = $user?->password ?? self::ABSENT_USER_HASH;
 
         if (! Hash::check($data['password'], $hash) || ! $user) {
             RateLimiter::hit($key, decaySeconds: 60);
