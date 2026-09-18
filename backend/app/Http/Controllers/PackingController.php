@@ -20,7 +20,7 @@ class PackingController extends Controller
         $data = $request->validate([
             'delivery_date' => ['required', 'date_format:Y-m-d'],
             'route_id' => ['sometimes', 'exists:routes,id'],
-            'status' => ['sometimes', 'string', 'max:20'],
+            'status' => ['sometimes', 'nullable', 'string', 'max:20'],
         ]);
 
         $orders = Order::with(['customer.route', 'lines'])
@@ -126,7 +126,7 @@ class PackingController extends Controller
             'lines.*.packed_qty' => ['required', 'numeric', 'gte:0'],
             'lines.*.package_type' => ['sometimes', Rule::in(['Bag', 'Box', 'Crate', 'Other'])],
             'packages' => ['sometimes', 'integer', 'min:0'],
-            'issue' => ['sometimes', 'string', 'max:500'],
+            'issue' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
         if ($packing->verified) {
@@ -172,7 +172,7 @@ class PackingController extends Controller
     public function verify(Request $request, Packing $packing): JsonResponse
     {
         $data = $request->validate([
-            'vehicle_no' => ['sometimes', 'string', 'max:20'],
+            'vehicle_no' => ['sometimes', 'nullable', 'string', 'max:20'],
             'driver_id' => ['sometimes', 'exists:users,id'],
         ]);
 

@@ -91,6 +91,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('perm:receiving,view')->group(function () {
         Route::get('/receivings', [ReceivingController::class, 'index']);
+        // Normalised procurement tables for the Receiving and QC screens' store.
+        Route::get('/procurement/context', [ReceivingController::class, 'context']);
         Route::get('/receivings/{receiving}', [ReceivingController::class, 'show']);
         Route::get('/quality-checks', [QualityCheckController::class, 'index']);
     });

@@ -15,7 +15,7 @@ class InvoiceController extends Controller
     {
         $data = $request->validate([
             'customer_id' => ['sometimes', 'exists:customers,id'],
-            'status' => ['sometimes', 'string', 'max:20'],
+            'status' => ['sometimes', 'nullable', 'string', 'max:20'],
             'from' => ['sometimes', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'date_format:Y-m-d'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],

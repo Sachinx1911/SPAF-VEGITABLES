@@ -6,7 +6,7 @@ import { fetchCustomers, fetchItems, fetchRoutes, fetchSuppliers } from './maste
 import { fetchConsolidation } from './consolidationApi';
 import { fetchOutstanding } from './financeApi';
 import { fetchInvoices } from './financeApi';
-import { fetchRequirements } from './procurementApi';
+import { fetchRequirements, fetchProcurementContext } from './procurementApi';
 import type { RequirementStatus } from '../domain/ops';
 import type { Unit } from '../types/models';
 
@@ -164,6 +164,27 @@ export function useRequirementsSync(deliveryDate: string) {
   }, [deliveryDate]);
 
   return { ...state, rows };
+}
+
+/**
+ * Fills the store with the procurement tables — purchase orders, receivings and
+ * quality checks — so the Receiving and QC screens' queue logic runs off the
+ * same tables the demo build uses. Returns `refresh` to call after a receive or
+ * a QC so the queues reflect the write.
+ */
+export function useProcurementSync(): SyncState {
+  const commit = useStore((s) => s.commit);
+
+  return useSync(async () => {
+    const ctx = await fetchProcurementContext();
+    commit(() => ({
+      purchaseOrders: ctx.purchaseOrders,
+      purchaseOrderItems: ctx.purchaseOrderItems,
+      receivings: ctx.receivings,
+      receivingItems: ctx.receivingItems,
+      qualityChecks: ctx.qualityChecks,
+    }));
+  }, [commit]);
 }
 
 /** Invoices, with the derived status the server computes on the way out. */

@@ -15,7 +15,7 @@ class ChallanController extends Controller
             'challan_date' => ['sometimes', 'date_format:Y-m-d'],
             'route_id' => ['sometimes', 'exists:routes,id'],
             'driver_id' => ['sometimes', 'exists:users,id'],
-            'status' => ['sometimes', 'string', 'max:20'],
+            'status' => ['sometimes', 'nullable', 'string', 'max:20'],
         ]);
 
         $challans = Challan::with(['customer:id,name,location,mobile', 'route:id,name,departure_time', 'driver:id,name', 'order:id,order_no'])
@@ -46,7 +46,7 @@ class ChallanController extends Controller
 
         $data = $request->validate([
             'driver_id' => ['sometimes', 'exists:users,id'],
-            'vehicle_no' => ['sometimes', 'string', 'max:20'],
+            'vehicle_no' => ['sometimes', 'nullable', 'string', 'max:20'],
         ]);
 
         $challan->load('lines.orderItem', 'order');

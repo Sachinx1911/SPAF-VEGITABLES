@@ -19,7 +19,7 @@ class OrderController extends Controller
             'delivery_date' => ['sometimes', 'date_format:Y-m-d'],
             'from' => ['sometimes', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'date_format:Y-m-d'],
-            'status' => ['sometimes', 'string', 'max:25'],
+            'status' => ['sometimes', 'nullable', 'string', 'max:25'],
             'customer_id' => ['sometimes', 'integer'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
         ]);
@@ -85,11 +85,11 @@ class OrderController extends Controller
             'order_type' => ['sometimes', Rule::in(['Regular', 'Urgent', 'Trial'])],
             'source' => ['sometimes', Rule::in(['Staff', 'Customer Portal', 'WhatsApp', 'Phone'])],
             'draft' => ['sometimes', 'boolean'],
-            'remarks' => ['sometimes', 'string', 'max:1000'],
+            'remarks' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_id' => ['required', 'exists:items,id'],
             'lines.*.qty' => ['required', 'numeric', 'gt:0'],
-            'lines.*.remarks' => ['sometimes', 'string', 'max:255'],
+            'lines.*.remarks' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
 
         $user = $request->user();

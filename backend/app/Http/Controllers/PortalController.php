@@ -122,7 +122,7 @@ class PortalController extends Controller
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_id' => ['required', 'exists:items,id'],
             'lines.*.qty' => ['required', 'numeric', 'gt:0'],
-            'remarks' => ['sometimes', 'string', 'max:500'],
+            'remarks' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
         $customerId = $this->customerId($request);

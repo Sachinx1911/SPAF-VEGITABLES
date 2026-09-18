@@ -5,7 +5,7 @@ import { useStore } from './useStore';
 import { uid } from '../lib/id';
 import { nowISO } from '../lib/clock';
 import { API_MODE } from '../lib/api';
-import { createPurchaseOrderApi } from './procurementApi';
+import { createPurchaseOrderApi, receiveStockApi, recordQualityCheckApi } from './procurementApi';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, oldValue: string, newValue: string, status: 'Success' | 'Warning' = 'Success') {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId: null, oldValue, newValue, device: 'Chrome · Windows', status };
@@ -74,7 +74,20 @@ export interface ReceiveLine {
   condition: ReceivingItem['condition'];
 }
 
-export function receiveStock(purchaseOrderId: string, lines: ReceiveLine[], userId: string): Receiving {
+export async function receiveStock(purchaseOrderId: string, lines: ReceiveLine[], userId: string): Promise<{ grnNo: string; status: string }> {
+  if (API_MODE) {
+    // The GRN records what arrived beside the purchase order, never over it, so
+    // a short delivery stays visible. The server assigns the GRN number.
+    return receiveStockApi(
+      purchaseOrderId,
+      lines.map((l) => ({ purchaseOrderItemId: l.purchaseOrderItemId, receivedQty: l.receivedQty, condition: l.condition })),
+    );
+  }
+
+  return receiveStockLocal(purchaseOrderId, lines, userId);
+}
+
+function receiveStockLocal(purchaseOrderId: string, lines: ReceiveLine[], userId: string): { grnNo: string; status: string } {
   const { db, commit } = useStore.getState();
   const po = db.purchaseOrders.find((p) => p.id === purchaseOrderId)!;
   const status: Receiving['status'] = lines.every((l) => l.receivedQty <= 0) ? 'Rejected' : lines.some((l) => l.receivedQty < l.orderedQty) ? 'Partial' : 'Received';
@@ -89,7 +102,7 @@ export function receiveStock(purchaseOrderId: string, lines: ReceiveLine[], user
     purchaseOrders: d.purchaseOrders.map((p) => (p.id === purchaseOrderId ? { ...p, status: poStatus } : p)),
     auditLogs: [auditRow(userId, status === 'Partial' ? 'Stock received (partial)' : 'Stock received', 'receiving', grn.grnNo, '', po.poNo, status === 'Partial' ? 'Warning' : 'Success'), ...d.auditLogs],
   }));
-  return grn;
+  return { grnNo: grn.grnNo, status: grn.status };
 }
 
 export interface QcInput {
@@ -104,7 +117,25 @@ export interface QcInput {
 }
 
 /** Recording a QC result also credits the item's stock with the accepted quantity. */
-export function recordQualityCheck(input: QcInput, userId: string) {
+export async function recordQualityCheck(input: QcInput, userId: string): Promise<void> {
+  if (API_MODE) {
+    // The server is the only thing that adds to stock, and only the accepted
+    // quantity — rejected produce never becomes sellable.
+    await recordQualityCheckApi({
+      receivingItemId: input.receivingItemId,
+      acceptedQty: input.acceptedQty,
+      rejectedQty: input.rejectedQty,
+      grade: input.grade,
+      reason: input.reason,
+      remarks: input.remarks,
+    });
+    return;
+  }
+
+  recordQualityCheckLocal(input, userId);
+}
+
+function recordQualityCheckLocal(input: QcInput, userId: string) {
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const qc: QualityCheck = { id: uid('qc'), checkedBy: userId, checkedAt: now, ...input };

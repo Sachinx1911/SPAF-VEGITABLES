@@ -37,7 +37,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:160', 'unique:users,email'],
-            'mobile' => ['sometimes', 'string', 'max:20'],
+            'mobile' => ['sometimes', 'nullable', 'string', 'max:20'],
             'role_key' => ['required', 'exists:roles,key'],
             'customer_id' => ['nullable', 'exists:customers,id'],
         ]);
@@ -68,8 +68,8 @@ class AdminController extends Controller
     public function updateUser(Request $request, User $user): JsonResponse
     {
         $data = $request->validate([
-            'name' => ['sometimes', 'string', 'max:120'],
-            'mobile' => ['sometimes', 'string', 'max:20'],
+            'name' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'mobile' => ['sometimes', 'nullable', 'string', 'max:20'],
             'role_key' => ['sometimes', 'exists:roles,key'],
             'status' => ['sometimes', Rule::in(['Active', 'Inactive'])],
         ]);

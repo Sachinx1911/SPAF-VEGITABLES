@@ -14,6 +14,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { receiveStock, type ReceiveLine } from '../../store/procurementActions';
+import { useProcurementSync } from '../../store/useApiSync';
 import { receivingQueue, type ReceivingQueueRow } from '../../domain/procurement';
 import { CATEGORIES } from '../../types/models';
 import type { PurchaseOrder } from '../../types/models';
@@ -34,9 +35,13 @@ type TabKey = (typeof TABS)[number]['key'];
 export function ReceivingPage() {
   const db = useDb();
   const [po, setPo] = useState<PurchaseOrder | null>(null);
+  // In API mode this fills the store with the procurement tables so the queue
+  // and detail read the same fields as the demo build. `refresh` re-pulls them
+  // after a GRN is recorded.
+  const { refresh } = useProcurementSync();
   const queue = useMemo(() => receivingQueue(db), [db]);
 
-  if (po) return <ReceivingDetail po={po} onBack={() => setPo(null)} />;
+  if (po) return <ReceivingDetail po={po} onBack={() => setPo(null)} refresh={refresh} />;
   return <ReceivingQueue queue={queue} onOpen={setPo} />;
 }
 
@@ -121,7 +126,7 @@ interface Row extends ReceiveLine {
   touched: boolean;
 }
 
-function ReceivingDetail({ po, onBack }: { po: PurchaseOrder; onBack: () => void }) {
+function ReceivingDetail({ po, onBack, refresh }: { po: PurchaseOrder; onBack: () => void; refresh: () => Promise<void> }) {
   const db = useDb();
   const user = useCurrentUser()!;
   const nav = useNavigate();
@@ -145,13 +150,16 @@ function ReceivingDetail({ po, onBack }: { po: PurchaseOrder; onBack: () => void
   const itemById = useMemo(() => new Map(db.items.map((i) => [i.id, i])), [db.items]);
 
   useEffect(() => {
-    setRows(lines.map((l) => {
-      const item = itemById.get(l.itemId)!;
-      return {
+    setRows(lines.flatMap((l) => {
+      // The masters may not have landed yet in API mode; drop the line for now
+      // rather than reading a name off nothing.
+      const item = itemById.get(l.itemId);
+      if (!item) return [];
+      return [{
         purchaseOrderItemId: l.id, poItemId: l.id, itemId: l.itemId, unit: l.unit,
         orderedQty: l.qty, receivedQty: l.qty, condition: 'Good' as const,
         name: item.name, category: item.category, rate: l.rate, remarks: '', touched: false,
-      };
+      }];
     }));
   }, [po.id, lines, itemById]);
 
@@ -200,8 +208,14 @@ function ReceivingDetail({ po, onBack }: { po: PurchaseOrder; onBack: () => void
       ],
     });
     if (!ok) return;
-    receiveStock(po.id, rows.map(({ purchaseOrderItemId, itemId, unit, orderedQty, receivedQty, condition }) =>
-      ({ purchaseOrderItemId, itemId, unit, orderedQty, receivedQty, condition })), user.id);
+    try {
+      await receiveStock(po.id, rows.map(({ purchaseOrderItemId, itemId, unit, orderedQty, receivedQty, condition }) =>
+        ({ purchaseOrderItemId, itemId, unit, orderedQty, receivedQty, condition })), user.id);
+      await refresh();
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not record the receiving', description: (e as Error).message });
+      return;
+    }
     toast({ tone: 'success', title: 'Stock received', description: 'Move to Quality Check to accept or reject.' });
     onBack();
   };

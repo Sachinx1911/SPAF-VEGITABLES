@@ -67,13 +67,13 @@ class DriverController extends Controller
         $data = $request->validate([
             'outcome' => ['required', 'in:Delivered,Partial,Failed'],
             'received_by_name' => ['required_unless:outcome,Failed', 'string', 'max:120'],
-            'remarks' => ['sometimes', 'string', 'max:500'],
+            'remarks' => ['sometimes', 'nullable', 'string', 'max:500'],
             'lines' => ['sometimes', 'array'],
             'lines.*.id' => ['required', 'exists:challan_items,id'],
             'lines.*.delivered_qty' => ['required', 'numeric', 'gte:0'],
             'lines.*.reason' => ['sometimes', 'nullable', 'string', 'max:120'],
-            'signature' => ['sometimes', 'string'],   // data URL from the pad
-            'photo' => ['sometimes', 'string'],
+            'signature' => ['sometimes', 'nullable', 'string'],   // data URL from the pad
+            'photo' => ['sometimes', 'nullable', 'string'],
         ]);
 
         if ($challan->driver_id !== $request->user()->id) {

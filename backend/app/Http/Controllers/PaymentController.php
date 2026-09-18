@@ -15,7 +15,7 @@ class PaymentController extends Controller
     {
         $data = $request->validate([
             'customer_id' => ['sometimes', 'exists:customers,id'],
-            'mode' => ['sometimes', 'string', 'max:20'],
+            'mode' => ['sometimes', 'nullable', 'string', 'max:20'],
             'from' => ['sometimes', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'date_format:Y-m-d'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
@@ -48,8 +48,8 @@ class PaymentController extends Controller
             'amount' => ['required', 'numeric', 'gt:0'],
             'payment_date' => ['required', 'date_format:Y-m-d'],
             'mode' => ['required', Rule::in(['Cash', 'Bank Transfer', 'UPI', 'Cheque', 'Other'])],
-            'reference' => ['sometimes', 'string', 'max:60'],
-            'remarks' => ['sometimes', 'string', 'max:500'],
+            'reference' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'remarks' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
         $invoice = Invoice::findOrFail($data['invoice_id']);

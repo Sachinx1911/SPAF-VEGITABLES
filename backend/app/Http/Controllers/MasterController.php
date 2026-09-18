@@ -24,8 +24,8 @@ class MasterController extends Controller
     public function customers(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'search' => ['sometimes', 'string', 'max:120'],
-            'type' => ['sometimes', 'string', 'max:30'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'type' => ['sometimes', 'nullable', 'string', 'max:30'],
             'active' => ['sometimes', 'boolean'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
         ]);
@@ -82,8 +82,8 @@ class MasterController extends Controller
     public function items(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'search' => ['sometimes', 'string', 'max:120'],
-            'category' => ['sometimes', 'string', 'max:40'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'category' => ['sometimes', 'nullable', 'string', 'max:40'],
             'active' => ['sometimes', 'boolean'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
         ]);
@@ -110,7 +110,7 @@ class MasterController extends Controller
             'unit' => ['required', Rule::in(['Kg', 'Pcs', 'Bdl', 'Dozen', 'Pkt', 'Box']),
                 Rule::unique('items')->where(fn ($q) => $q->where('name', $request->input('name')))],
             'category' => ['required', 'string', 'max:40'],
-            'code' => ['sometimes', 'string', 'max:20', 'unique:items,code'],
+            'code' => ['sometimes', 'nullable', 'string', 'max:20', 'unique:items,code'],
             'default_purchase_price' => ['required', 'numeric', 'gt:0'],
             'default_selling_price' => ['sometimes', 'numeric', 'gt:0'],
             'min_stock' => ['sometimes', 'numeric', 'gte:0'],
@@ -136,8 +136,8 @@ class MasterController extends Controller
     public function updateItem(Request $request, Item $item): JsonResponse
     {
         $data = $request->validate([
-            'name' => ['sometimes', 'string', 'max:120'],
-            'category' => ['sometimes', 'string', 'max:40'],
+            'name' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'category' => ['sometimes', 'nullable', 'string', 'max:40'],
             'default_purchase_price' => ['sometimes', 'numeric', 'gt:0'],
             'default_selling_price' => ['sometimes', 'numeric', 'gt:0'],
             'min_stock' => ['sometimes', 'numeric', 'gte:0'],
@@ -242,23 +242,23 @@ class MasterController extends Controller
     {
         return $request->validate([
             'name' => ['required', 'string', 'max:160'],
-            'code' => ['sometimes', 'string', 'max:20', Rule::unique('customers', 'code')->ignore($ignoreId)],
-            'legal_name' => ['sometimes', 'string', 'max:200'],
+            'code' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('customers', 'code')->ignore($ignoreId)],
+            'legal_name' => ['sometimes', 'nullable', 'string', 'max:200'],
             'type' => ['required', Rule::in(['Hotel', 'Restaurant', 'Cafe', 'Caterer', 'Corporate', 'Other'])],
             'route_id' => ['required', 'exists:routes,id'],
-            'location' => ['sometimes', 'string', 'max:120'],
-            'contact_person' => ['sometimes', 'string', 'max:120'],
-            'mobile' => ['sometimes', 'string', 'max:20'],
-            'alt_mobile' => ['sometimes', 'string', 'max:20'],
+            'location' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'contact_person' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'mobile' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'alt_mobile' => ['sometimes', 'nullable', 'string', 'max:20'],
             'email' => ['sometimes', 'nullable', 'email', 'max:160'],
-            'billing_address' => ['sometimes', 'string', 'max:500'],
-            'delivery_address' => ['sometimes', 'string', 'max:500'],
-            'gstin' => ['sometimes', 'string', 'max:20'],
-            'pan' => ['sometimes', 'string', 'max:15'],
+            'billing_address' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'delivery_address' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'gstin' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'pan' => ['sometimes', 'nullable', 'string', 'max:15'],
             'payment_terms_days' => ['sometimes', 'integer', 'min:0', 'max:180'],
             'credit_limit' => ['sometimes', 'numeric', 'gte:0'],
             'order_frequency' => ['sometimes', Rule::in(['Daily', 'Alternate Days', 'Weekly', 'On Demand'])],
-            'special_instructions' => ['sometimes', 'string', 'max:500'],
+            'special_instructions' => ['sometimes', 'nullable', 'string', 'max:500'],
             'active' => ['sometimes', 'boolean'],
         ]);
     }

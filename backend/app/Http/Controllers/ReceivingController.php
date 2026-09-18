@@ -155,6 +155,106 @@ class ReceivingController extends Controller
         ]);
     }
 
+    /**
+     * The normalised procurement tables for the operational window, in the front
+     * end's own shape, so the Receiving and Quality Check screens fill their
+     * store and their existing queue logic runs unchanged.
+     *
+     * Scoped to recent delivery dates plus anything still open, so it stays a
+     * small, bounded payload rather than the whole history.
+     */
+    public function context(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'since' => ['sometimes', 'date_format:Y-m-d'],
+        ]);
+        $since = $data['since'] ?? now()->subDays(30)->toDateString();
+
+        $orders = PurchaseOrder::with(['lines', 'receivings.lines.qualityCheck'])
+            ->where(fn ($q) => $q
+                ->whereDate('for_delivery_date', '>=', $since)
+                ->orWhereIn('status', ['Confirmed', 'Partially Received']))
+            ->get();
+
+        $purchaseOrders = [];
+        $purchaseOrderItems = [];
+        $receivings = [];
+        $receivingItems = [];
+        $qualityChecks = [];
+
+        foreach ($orders as $po) {
+            $purchaseOrders[] = [
+                'id' => (string) $po->id,
+                'poNo' => $po->po_no,
+                'supplierId' => (string) $po->supplier_id,
+                'purchaseDate' => $po->purchase_date->toDateString(),
+                'forDeliveryDate' => $po->for_delivery_date->toDateString(),
+                'supplierInvoiceNo' => $po->supplier_invoice_no,
+                'status' => $po->status,
+                'taxAmount' => (float) $po->tax_amount,
+                'createdBy' => (string) $po->created_by,
+                'createdAt' => $po->created_at?->toIso8601String() ?? '',
+            ];
+
+            foreach ($po->lines as $l) {
+                $purchaseOrderItems[] = [
+                    'id' => (string) $l->id,
+                    'purchaseOrderId' => (string) $l->purchase_order_id,
+                    'itemId' => (string) $l->item_id,
+                    'unit' => $l->unit,
+                    'qty' => (float) $l->qty,
+                    'rate' => (float) $l->rate,
+                    'remarks' => '',
+                ];
+            }
+
+            foreach ($po->receivings as $grn) {
+                $receivings[] = [
+                    'id' => (string) $grn->id,
+                    'grnNo' => $grn->grn_no,
+                    'purchaseOrderId' => (string) $grn->purchase_order_id,
+                    'receivedAt' => $grn->received_at?->toIso8601String() ?? '',
+                    'receivedBy' => (string) $grn->received_by,
+                    'status' => $grn->status,
+                ];
+
+                foreach ($grn->lines as $ri) {
+                    $receivingItems[] = [
+                        'id' => (string) $ri->id,
+                        'receivingId' => (string) $ri->receiving_id,
+                        'purchaseOrderItemId' => (string) $ri->purchase_order_item_id,
+                        'itemId' => (string) $ri->item_id,
+                        'unit' => $ri->unit,
+                        'orderedQty' => (float) $ri->ordered_qty,
+                        'receivedQty' => (float) $ri->received_qty,
+                        'condition' => $ri->condition,
+                    ];
+
+                    if ($ri->qualityCheck) {
+                        $qc = $ri->qualityCheck;
+                        $qualityChecks[] = [
+                            'id' => (string) $qc->id,
+                            'receivingItemId' => (string) $qc->receiving_item_id,
+                            'itemId' => (string) $qc->item_id,
+                            'unit' => $qc->unit,
+                            'acceptedQty' => (float) $qc->accepted_qty,
+                            'rejectedQty' => (float) $qc->rejected_qty,
+                            'grade' => $qc->grade,
+                            'reason' => $qc->reason,
+                            'remarks' => $qc->remarks ?? '',
+                            'checkedBy' => (string) $qc->checked_by,
+                            'checkedAt' => $qc->checked_at?->toIso8601String() ?? '',
+                        ];
+                    }
+                }
+            }
+        }
+
+        return response()->json(compact(
+            'purchaseOrders', 'purchaseOrderItems', 'receivings', 'receivingItems', 'qualityChecks',
+        ));
+    }
+
     /** GRN-YYMM-NNNN, restarting each month. */
     private function nextGrnNo(): string
     {

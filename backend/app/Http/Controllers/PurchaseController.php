@@ -65,7 +65,7 @@ class PurchaseController extends Controller
     {
         $data = $request->validate([
             'for_delivery_date' => ['sometimes', 'date_format:Y-m-d'],
-            'status' => ['sometimes', 'string', 'max:25'],
+            'status' => ['sometimes', 'nullable', 'string', 'max:25'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
         ]);
 
@@ -85,7 +85,7 @@ class PurchaseController extends Controller
             'supplier_id' => ['required', 'exists:suppliers,id'],
             'purchase_date' => ['required', 'date_format:Y-m-d'],
             'for_delivery_date' => ['required', 'date_format:Y-m-d'],
-            'supplier_invoice_no' => ['sometimes', 'string', 'max:40'],
+            'supplier_invoice_no' => ['sometimes', 'nullable', 'string', 'max:40'],
             'tax_amount' => ['sometimes', 'numeric', 'gte:0'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_id' => ['required', 'exists:items,id'],

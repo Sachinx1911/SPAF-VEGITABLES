@@ -8,6 +8,7 @@ import { FileUpload } from '../../components/ui/FileUpload';
 import { EmptyState } from '../../components/ui/States';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { recordQualityCheck } from '../../store/procurementActions';
+import { useProcurementSync } from '../../store/useApiSync';
 import { qcQueue, type QcQueueRow } from '../../domain/procurement';
 import { useToast } from '../../components/ui/Toast';
 import { fmtDateTime, qty } from '../../lib/format';
@@ -20,6 +21,9 @@ export function QualityCheckPage() {
   const db = useDb();
   const user = useCurrentUser()!;
   const toast = useToast();
+  // Fills the store with the procurement tables in API mode; refresh re-pulls
+  // them after a grade is recorded so the line leaves the queue.
+  const { refresh } = useProcurementSync();
   const queue = useMemo(() => qcQueue(db), [db]);
   const [drafts, setDrafts] = useState<Record<string, { accepted: number; rejected: number; grade: QcGrade; reason: QcReason | ''; remarks: string; photo: { name: string; url: string } | null }>>({});
 
@@ -29,15 +33,21 @@ export function QualityCheckPage() {
   const setDraft = (row: QcQueueRow, patch: Partial<ReturnType<typeof draftFor>>) =>
     setDrafts((d) => ({ ...d, [row.receivingItem.id]: { ...draftFor(row), ...patch } }));
 
-  const save = (row: QcQueueRow) => {
+  const save = async (row: QcQueueRow) => {
     const d = draftFor(row);
     if (d.accepted + d.rejected > row.receivingItem.receivedQty + 0.001) {
       return toast({ tone: 'error', title: 'Accepted + rejected exceeds received quantity' });
     }
-    recordQualityCheck(
-      { receivingItemId: row.receivingItem.id, itemId: row.item.id, unit: row.item.unit, acceptedQty: d.accepted, rejectedQty: d.rejected, grade: d.grade, reason: d.rejected > 0 ? (d.reason || 'Other') : null, remarks: d.remarks },
-      user.id,
-    );
+    try {
+      await recordQualityCheck(
+        { receivingItemId: row.receivingItem.id, itemId: row.item.id, unit: row.item.unit, acceptedQty: d.accepted, rejectedQty: d.rejected, grade: d.grade, reason: d.rejected > 0 ? (d.reason || 'Other') : null, remarks: d.remarks },
+        user.id,
+      );
+      await refresh();
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not save the quality check', description: (e as Error).message });
+      return;
+    }
     toast({ tone: 'success', title: 'Quality check saved', description: `${row.item.name} · Grade ${d.grade}` });
   };
 

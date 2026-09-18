@@ -1,5 +1,25 @@
 import { api } from '../lib/api';
-import type { Category, Unit } from '../types/models';
+import type {
+  Category, PurchaseOrder, PurchaseOrderItem, QualityCheck, Receiving, ReceivingItem, Unit,
+} from '../types/models';
+
+/**
+ * The normalised procurement tables for the operational window, in the store's
+ * own shape. Filling the store with these lets the Receiving and Quality Check
+ * screens keep their existing queue logic instead of each learning a second,
+ * server-shaped data source.
+ */
+export interface ProcurementContext {
+  purchaseOrders: PurchaseOrder[];
+  purchaseOrderItems: PurchaseOrderItem[];
+  receivings: Receiving[];
+  receivingItems: ReceivingItem[];
+  qualityChecks: QualityCheck[];
+}
+
+export function fetchProcurementContext(since?: string): Promise<ProcurementContext> {
+  return api.get<ProcurementContext>('/procurement/context', { since });
+}
 
 /**
  * Purchase, receiving and quality check, against the server.

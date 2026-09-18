@@ -157,7 +157,7 @@ class ReportController extends Controller
     public function auditLogs(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'module' => ['sometimes', 'string', 'max:40'],
+            'module' => ['sometimes', 'nullable', 'string', 'max:40'],
             'user_id' => ['sometimes', 'exists:users,id'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
         ]);

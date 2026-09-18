@@ -110,6 +110,10 @@ async function request<T>(method: Method, path: string, options: RequestOptions 
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: options.signal,
+      // The API is live data — an order just approved, a GRN just recorded. A GET
+      // to the same URL must not be served from the browser's HTTP cache, or a
+      // screen re-opened after a write shows the state from before it.
+      cache: 'no-store',
     });
   } catch (e) {
     // A network failure is not the same as a rejection: say so, rather than

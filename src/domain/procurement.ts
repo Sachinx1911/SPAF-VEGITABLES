@@ -10,7 +10,9 @@ export interface ReceivingQueueRow {
 /** Purchase orders still waiting on a GRN (fully or partially). */
 export function receivingQueue(db: Database): ReceivingQueueRow[] {
   return db.purchaseOrders
-    .filter((po) => po.status === 'Confirmed' || po.status === 'Draft')
+    // A partially received order still has stock outstanding, so it stays in the
+    // queue until it is fully received — the same rule the server applies.
+    .filter((po) => po.status === 'Confirmed' || po.status === 'Draft' || po.status === 'Partially Received')
     .map((po) => {
       const lines = db.purchaseOrderItems.filter((l) => l.purchaseOrderId === po.id);
       return { po, supplierName: db.suppliers.find((s) => s.id === po.supplierId)?.name ?? '—', lineCount: lines.length, totalQty: lines.reduce((s, l) => s + l.qty, 0) };
@@ -32,11 +34,16 @@ export function qcQueue(db: Database): QcQueueRow[] {
   return db.receivingItems
     .filter((ri) => !checked.has(ri.id) && ri.receivedQty > 0)
     .map((ri) => {
-      const grn = db.receivings.find((g) => g.id === ri.receivingId)!;
+      // In API mode the procurement tables and the item masters are fetched by
+      // different hooks, so for a moment a received line can be in hand before
+      // its item or GRN is. Skip such a line rather than dereferencing a gap.
+      const grn = db.receivings.find((g) => g.id === ri.receivingId);
+      const item = db.items.find((i) => i.id === ri.itemId);
+      if (!grn || !item) return null;
       const po = db.purchaseOrders.find((p) => p.id === grn.purchaseOrderId);
-      const item = db.items.find((i) => i.id === ri.itemId)!;
       return { receivingItem: ri, item, supplierName: db.suppliers.find((s) => s.id === po?.supplierId)?.name ?? '—', grnNo: grn.grnNo, receivedAt: grn.receivedAt };
     })
+    .filter((row): row is QcQueueRow => row !== null)
     .sort((a, b) => (a.receivedAt < b.receivedAt ? -1 : 1));
 }
 

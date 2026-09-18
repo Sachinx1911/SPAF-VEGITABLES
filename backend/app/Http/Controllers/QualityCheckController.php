@@ -46,7 +46,7 @@ class QualityCheckController extends Controller
             'rejected_qty' => ['required', 'numeric', 'gte:0'],
             'grade' => ['required', Rule::in(['A', 'B', 'C', 'Rejected'])],
             'reason' => ['nullable', Rule::in(['Damaged', 'Overripe', 'Underripe', 'Poor Quality', 'Wrong Item', 'Wrong Qty', 'Other'])],
-            'remarks' => ['sometimes', 'string', 'max:500'],
+            'remarks' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
         $line = ReceivingItem::with('item')->findOrFail($data['receiving_item_id']);
