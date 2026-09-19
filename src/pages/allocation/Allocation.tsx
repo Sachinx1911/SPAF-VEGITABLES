@@ -10,7 +10,8 @@ import { EmptyState } from '../../components/ui/States';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { autoAllocateItem, setManualAllocation } from '../../store/procurementActions';
+import { autoAllocateAll, autoAllocateItem, setManualAllocation } from '../../store/procurementActions';
+import { useOrdersSync, useProcurementSync, useRequirementsSync } from '../../store/useApiSync';
 import { allocationRows, itemsNeedingAllocation, type AllocationRow } from '../../domain/procurement';
 import { CATEGORIES, type Category } from '../../types/models';
 import { addDays, fmtTime, num, qty } from '../../lib/format';
@@ -60,6 +61,14 @@ export function AllocationPage() {
   const [shortageOnly, setShortageOnly] = useState(false);
   const [override, setOverride] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // In API mode: fill the store so allocationRows() sees current server state.
+  // Requirements → stockQty used by allocationRows to compute available.
+  // ProcurementSync → qualityChecks so the QC-accepted qty adds to available.
+  // OrdersSync → qty.allocated is current after each auto-allocate call.
+  const { refresh: refreshOrders } = useOrdersSync({ deliveryDate: date });
+  useProcurementSync();
+  useRequirementsSync(date);
 
   const pendingItems = useMemo(() => itemsNeedingAllocation(db, date), [db, date]);
   const lines = useMemo(() => allocationRows(db, date), [db, date]);
@@ -121,8 +130,13 @@ export function AllocationPage() {
       confirmLabel: 'Allocate',
     });
     if (!ok) return;
-    autoAllocateItem(date, id, user.id, override);
-    toast({ tone: 'success', title: 'Allocated', description: item.name });
+    try {
+      await autoAllocateItem(date, id, user.id, override);
+      await refreshOrders();
+      toast({ tone: 'success', title: 'Allocated', description: item.name });
+    } catch (e) {
+      toast({ tone: 'error', title: 'Allocation failed', description: (e as Error).message });
+    }
   };
 
   const runAutoAll = async () => {
@@ -137,14 +151,22 @@ export function AllocationPage() {
       details: [{ label: 'Delivery date', value: date }, { label: 'Items', value: targets.length }],
     });
     if (!ok) return;
-    targets.forEach((r) => autoAllocateItem(date, r.itemId, user.id, override));
-    toast({ tone: 'success', title: 'Auto allocation complete', description: `${targets.length} items allocated.` });
+    try {
+      // In API mode: one server call allocates the entire day in one transaction.
+      // In demo mode: each item is run locally in sequence (autoAllocateAll does both).
+      await autoAllocateAll(date, targets.map((r) => r.itemId), user.id, override);
+      await refreshOrders();
+      toast({ tone: 'success', title: 'Auto allocation complete', description: `${targets.length} items allocated.` });
+    } catch (e) {
+      toast({ tone: 'error', title: 'Allocation failed', description: (e as Error).message });
+    }
   };
 
   const clearItem = async (r: ItemRow) => {
     const ok = await confirm({ title: `Clear allocation for ${r.name}?`, tone: 'danger', confirmLabel: 'Clear' });
     if (!ok) return;
     r.lines.forEach((l) => setManualAllocation(l.orderItemId, 0, user.id));
+    await refreshOrders();
     toast({ tone: 'warning', title: 'Allocation cleared', description: r.name });
   };
 

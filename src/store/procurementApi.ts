@@ -156,3 +156,32 @@ export async function recordQualityCheckApi(input: QcPayload): Promise<{ stockNo
 
   return res;
 }
+
+/* -------------------------------------------------------------- allocation */
+
+/**
+ * Runs the proportional split server-side for one item (itemId set) or for
+ * every item of the day (itemId omitted). Returns the count of items processed.
+ */
+export async function autoAllocateApi(
+  deliveryDate: string,
+  itemId?: string,
+  override?: boolean,
+): Promise<{ allocated: number }> {
+  return api.post<{ allocated: number }>('/allocations/auto', {
+    delivery_date: deliveryDate,
+    ...(itemId ? { item_id: itemId } : {}),
+    override: override ?? false,
+  });
+}
+
+/**
+ * Manually sets one order line's allocated quantity.
+ * The server guards packed lines — a line already packed cannot be changed.
+ */
+export async function setManualAllocationApi(
+  orderItemId: string,
+  allocatedQty: number,
+): Promise<void> {
+  await api.put(`/allocations/${orderItemId}`, { allocated_qty: allocatedQty });
+}

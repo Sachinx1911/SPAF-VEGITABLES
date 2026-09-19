@@ -5,7 +5,7 @@ import { useStore } from './useStore';
 import { uid } from '../lib/id';
 import { nowISO } from '../lib/clock';
 import { API_MODE } from '../lib/api';
-import { createPurchaseOrderApi, receiveStockApi, recordQualityCheckApi } from './procurementApi';
+import { autoAllocateApi, createPurchaseOrderApi, receiveStockApi, recordQualityCheckApi, setManualAllocationApi } from './procurementApi';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, oldValue: string, newValue: string, status: 'Success' | 'Warning' = 'Success') {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId: null, oldValue, newValue, device: 'Chrome · Windows', status };
@@ -151,11 +151,37 @@ function recordQualityCheckLocal(input: QcInput, userId: string) {
 }
 
 /**
- * Proportionally allocates available stock (existing stock + everything accepted through QC for
- * purchase orders raised for this delivery date) across every approved/locked order line for an
- * item, in customer route order — the same rule the legacy sheets used for a shortage.
+ * Proportionally allocates available stock for one item across every approved/locked order
+ * line for a delivery date, in customer route order.
+ *
+ * In API mode the server runs the same algorithm and writes the result; the caller must
+ * call refresh() afterwards to pull the updated qty_allocated values into the store.
  */
-export function autoAllocateItem(deliveryDate: string, itemId: string, userId: string, override = false) {
+export async function autoAllocateItem(deliveryDate: string, itemId: string, userId: string, override = false): Promise<void> {
+  if (API_MODE) {
+    await autoAllocateApi(deliveryDate, itemId, override);
+    return;
+  }
+  autoAllocateItemLocal(deliveryDate, itemId, userId, override);
+}
+
+/**
+ * Auto-allocates every item of the day in one call.
+ *
+ * In API mode the backend runs all items in one transaction (no item_id sent).
+ * In demo mode each item is run locally in sequence.
+ */
+export async function autoAllocateAll(deliveryDate: string, itemIds: string[], userId: string, override = false): Promise<void> {
+  if (API_MODE) {
+    await autoAllocateApi(deliveryDate, undefined, override);
+    return;
+  }
+  for (const itemId of itemIds) {
+    autoAllocateItemLocal(deliveryDate, itemId, userId, override);
+  }
+}
+
+function autoAllocateItemLocal(deliveryDate: string, itemId: string, userId: string, override = false) {
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const item = db.items.find((i) => i.id === itemId)!;
@@ -218,13 +244,30 @@ export function logNote(action: string, module: string, recordRef: string, note:
   commit((d) => ({ auditLogs: [auditRow(userId, action, module, recordRef, '', note, 'Warning'), ...d.auditLogs] }));
 }
 
-export function setManualAllocation(orderItemId: string, allocatedQty: number, userId: string) {
+/**
+ * Overrides one order line's allocated quantity.
+ *
+ * In API mode: the store is updated optimistically so the QtyInput is responsive,
+ * and the API call fires in the background. The next explicit refresh() reconciles.
+ * In demo mode: only the store is updated.
+ */
+export function setManualAllocation(orderItemId: string, allocatedQty: number, userId: string): void {
   const { db, commit } = useStore.getState();
   const line = db.orderItems.find((l) => l.id === orderItemId);
   if (!line) return;
+
+  // Optimistic local update — runs in both modes so the UI is instant.
   commit((d) => ({
     orderItems: d.orderItems.map((l) => (l.id === orderItemId ? { ...l, qty: { ...l.qty, allocated: allocatedQty } } : l)),
     allocations: d.allocations.map((a) => (a.orderItemId === orderItemId ? { ...a, allocatedQty, override: true, allocatedBy: userId, allocatedAt: nowISO() } : a)),
     auditLogs: [auditRow(userId, 'Allocation adjusted', 'allocation', line.id, String(line.qty.allocated ?? ''), String(allocatedQty), 'Warning'), ...d.auditLogs],
   }));
+
+  if (API_MODE) {
+    // Fire-and-forget: a failed call leaves the optimistic value in place until
+    // the next refresh, which is acceptable for a manual tweak on this screen.
+    void setManualAllocationApi(orderItemId, allocatedQty).catch(() => {
+      // Silently ignore — the next auto-allocate or page reload will reconcile.
+    });
+  }
 }

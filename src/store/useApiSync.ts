@@ -146,9 +146,29 @@ export interface RequirementViewRow {
 }
 
 export function useRequirementsSync(deliveryDate: string) {
+  const commit = useStore((s) => s.commit);
   const [rows, setRows] = useState<RequirementViewRow[] | null>(null);
   const state = useSync(async () => {
     const res = await fetchRequirements(deliveryDate);
+
+    // Also push the requirements into the store so allocationRows() — which
+    // reads db.requirements for the on-hand stock figure — works in API mode.
+    const nowISO = new Date().toISOString();
+    commit((db) => ({
+      requirements: [
+        ...db.requirements.filter((r) => r.deliveryDate !== deliveryDate),
+        ...res.rows.map((r) => ({
+          id: `req-${r.itemId}-${deliveryDate}`,
+          deliveryDate,
+          itemId: r.itemId,
+          unit: r.unit as Unit,
+          requiredQty: r.requiredQty,
+          stockQty: r.stockQty,
+          generatedAt: nowISO,
+        })),
+      ],
+    }));
+
     setRows(res.rows.map((r) => {
       // The server calls a fully-covered line OK and anything short Required;
       // the demo build additionally flags a line Critical when most of it is
@@ -157,11 +177,11 @@ export function useRequirementsSync(deliveryDate: string) {
       const status: RequirementStatus =
         r.toBuyQty <= 0 ? 'OK' : ratio > 0.3 ? 'Critical' : 'Purchase Required';
       return {
-        itemId: r.itemId, unit: r.unit, required: r.requiredQty, stock: r.stockQty,
+        itemId: r.itemId, unit: r.unit as Unit, required: r.requiredQty, stock: r.stockQty,
         purchased: r.purchasedQty, toPurchase: r.toBuyQty, status,
       };
     }));
-  }, [deliveryDate]);
+  }, [deliveryDate, commit]);
 
   return { ...state, rows };
 }
