@@ -103,6 +103,40 @@ export async function updatePackingApi(packingId: string, lines: UpdatePackingLi
   });
 }
 
+/**
+ * Maps a raw Eloquent Challan (snake_case) to the frontend Challan type.
+ * Used by both the packing verify flow and the challan list/detail sync.
+ */
+export function mapChallanRaw(raw: ChallanRaw): import('../types/models').Challan {
+  return {
+    id: String(raw.id),
+    challanNo: raw.challan_no,
+    packingId: String(raw.packing_id),
+    orderId: String(raw.order_id),
+    customerId: String(raw.customer_id),
+    routeId: String(raw.route_id ?? ''),
+    challanDate: raw.challan_date,
+    driverId: raw.driver_id != null ? String(raw.driver_id) : null,
+    vehicleNo: raw.vehicle_no ?? '',
+    status: raw.status as import('../types/models').Challan['status'],
+    packages: raw.packages,
+    lines: (raw.lines ?? []).map((l) => ({
+      orderItemId: String(l.order_item_id),
+      itemId: String(l.item_id),
+      unit: l.unit as import('../types/models').Unit,
+      qty: Number(l.qty),
+    })),
+    preparedBy: String(raw.prepared_by),
+    packedBy: raw.packed_by != null ? String(raw.packed_by) : null,
+    dispatchedAt: raw.dispatched_at,
+    deliveredAt: raw.delivered_at,
+    receivedByName: '',
+    signature: null,
+    photo: null,
+    deliveryRemarks: '',
+  };
+}
+
 export async function verifyPackingApi(packingId: string, vehicleNo?: string, driverId?: string): Promise<{ challan: ChallanRaw }> {
   return api.post<{ challan: ChallanRaw }>(`/packings/${packingId}/verify`, {
     ...(vehicleNo ? { vehicle_no: vehicleNo } : {}),

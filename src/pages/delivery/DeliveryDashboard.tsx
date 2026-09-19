@@ -32,6 +32,7 @@ import { useConfirm } from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/Toast";
 import { useCurrentUser, useDb } from "../../store/useStore";
 import { dispatchChallan } from "../../store/packingActions";
+import { useChallansSync } from "../../store/useApiSync";
 import { deliveryRows, type DeliveryBoardRow } from "../../domain/packing";
 import { addDays, fmtDate, fmtTime } from "../../lib/format";
 import { todayISO } from "../../lib/clock";
@@ -81,6 +82,8 @@ export function DeliveryDashboardPage() {
 
   const today = todayISO();
   const [date, setDate] = useState(today);
+
+  useChallansSync(date);
   const [tab, setTab] = useState<TabKey>("all");
   const [search, setSearch] = useState("");
   const [routeId, setRouteId] = useState("");
@@ -217,23 +220,19 @@ export function DeliveryDashboardPage() {
       confirmLabel: "Dispatch",
     });
     if (ok) {
-      dispatchChallan(r.challan.id, user.id);
-      toast({
-        tone: "success",
-        title: "Dispatched",
-        description: r.challan.challanNo,
-      });
+      try {
+        await dispatchChallan(r.challan.id, user.id);
+        toast({ tone: "success", title: "Dispatched", description: r.challan.challanNo });
+      } catch (e) {
+        toast({ tone: "error", title: "Dispatch failed", description: (e as Error).message });
+      }
     }
   };
 
   const dispatchAllReady = async () => {
     const ready = rows.filter((r) => r.challan.status === "Ready");
     if (!ready.length) {
-      toast({
-        tone: "info",
-        title: "Nothing to dispatch",
-        description: "No challans are waiting.",
-      });
+      toast({ tone: "info", title: "Nothing to dispatch", description: "No challans are waiting." });
       return;
     }
     const ok = await confirm({
@@ -242,12 +241,12 @@ export function DeliveryDashboardPage() {
       confirmLabel: "Dispatch all",
     });
     if (!ok) return;
-    ready.forEach((r) => dispatchChallan(r.challan.id, user.id));
-    toast({
-      tone: "success",
-      title: "Dispatched",
-      description: `${ready.length} challans are on the road.`,
-    });
+    try {
+      await Promise.all(ready.map((r) => dispatchChallan(r.challan.id, user.id)));
+      toast({ tone: "success", title: "Dispatched", description: `${ready.length} challans are on the road.` });
+    } catch (e) {
+      toast({ tone: "error", title: "Dispatch failed", description: (e as Error).message });
+    }
   };
 
   const exportCsv = () => {

@@ -5,9 +5,11 @@ import { nowISO } from '../lib/clock';
 import { API_MODE } from '../lib/api';
 import {
   fetchPackingDetail,
+  mapChallanRaw,
   updatePackingApi,
   verifyPackingApi,
 } from './packingApi';
+import { dispatchChallanApi } from './deliveryApi';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, customerId: string | null, oldValue: string, newValue: string, status: 'Success' | 'Warning' = 'Success') {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId, oldValue, newValue, device: 'Chrome · Windows', status };
@@ -156,33 +158,7 @@ export async function markPacked(packingId: string, userId: string): Promise<Cha
     // Step 2: verify and let the server generate the challan.
     const { challan: raw } = await verifyPackingApi(packingId);
 
-    const challan: Challan = {
-      id: String(raw.id),
-      challanNo: raw.challan_no,
-      packingId: String(raw.packing_id),
-      orderId: String(raw.order_id),
-      customerId: String(raw.customer_id),
-      routeId: String(raw.route_id ?? ''),
-      challanDate: raw.challan_date,
-      driverId: raw.driver_id != null ? String(raw.driver_id) : null,
-      vehicleNo: raw.vehicle_no ?? '',
-      status: raw.status as Challan['status'],
-      packages: raw.packages,
-      lines: raw.lines.map((l) => ({
-        orderItemId: String(l.order_item_id),
-        itemId: String(l.item_id),
-        unit: l.unit as Unit,
-        qty: Number(l.qty),
-      })),
-      preparedBy: String(raw.prepared_by),
-      packedBy: raw.packed_by != null ? String(raw.packed_by) : null,
-      dispatchedAt: null,
-      deliveredAt: null,
-      receivedByName: '',
-      signature: null,
-      photo: null,
-      deliveryRemarks: '',
-    };
+    const challan = mapChallanRaw(raw);
 
     commit((d) => ({
       packings: d.packings.map((p) => (p.id === packingId ? { ...p, status: 'Packed', verified: true, packedAt: nowISO() } : p)),
@@ -241,7 +217,18 @@ export function startTransit(challanId: string, userId: string) {
   }));
 }
 
-export function dispatchChallan(challanId: string, userId: string) {
+export async function dispatchChallan(challanId: string, userId: string): Promise<void> {
+  if (API_MODE) {
+    await dispatchChallanApi(challanId);
+    // Server writes qty_dispatched into the chain and sets status to 'In Transit'.
+    const { commit } = useStore.getState();
+    commit((d) => ({
+      challans: d.challans.map((c) => (c.id === challanId ? { ...c, status: 'In Transit', dispatchedAt: nowISO() } : c)),
+      orders: d.orders.map((o) => (o.id === d.challans.find((c) => c.id === challanId)?.orderId ? { ...o, deliveryStatus: 'In Transit' } : o)),
+    }));
+    return;
+  }
+
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const challan = db.challans.find((c) => c.id === challanId)!;

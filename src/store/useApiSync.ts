@@ -8,6 +8,8 @@ import { fetchOutstanding } from './financeApi';
 import { fetchInvoices } from './financeApi';
 import { fetchRequirements, fetchProcurementContext } from './procurementApi';
 import { fetchPackingBoard } from './packingApi';
+import { mapChallanRaw } from './packingApi';
+import { fetchChallans } from './deliveryApi';
 import type { RequirementStatus } from '../domain/ops';
 import type { Packing, Unit } from '../types/models';
 
@@ -249,6 +251,30 @@ export function usePackingSync(deliveryDate: string): SyncState {
       ],
     }));
   }, [deliveryDate, commit]);
+}
+
+/**
+ * Fills db.challans for a delivery date from the challan list endpoint.
+ * Lines are set to [] for board-level stubs; ChallanDetail fetches the full
+ * record with lines when it opens.
+ */
+export function useChallansSync(challanDate?: string): SyncState {
+  const commit = useStore((s) => s.commit);
+
+  return useSync(async () => {
+    const { challans: raw } = await fetchChallans(challanDate);
+    const mapped = raw.map(mapChallanRaw);
+    const ids = new Set(mapped.map((c) => c.id));
+
+    commit((d) => ({
+      // Keep challans outside this date, plus any detail-loaded entries for
+      // this date (those have lines populated and must not be overwritten).
+      challans: [
+        ...d.challans.filter((c) => !ids.has(c.id) || c.lines.length > 0),
+        ...mapped.filter((c) => !d.challans.some((ex) => ex.id === c.id && ex.lines.length > 0)),
+      ],
+    }));
+  }, [challanDate, commit]);
 }
 
 /** Invoices, with the derived status the server computes on the way out. */

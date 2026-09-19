@@ -44,13 +44,13 @@ export function ChallanDetailPage() {
   }
 
   const doDispatch = async () => {
-    const ok = await confirm({
-      title: `Dispatch ${challan.challanNo}?`,
-      confirmLabel: "Dispatch",
-    });
-    if (ok) {
-      dispatchChallan(challan.id, user.id);
+    const ok = await confirm({ title: `Dispatch ${challan.challanNo}?`, confirmLabel: "Dispatch" });
+    if (!ok) return;
+    try {
+      await dispatchChallan(challan.id, user.id);
       toast({ tone: "success", title: "Dispatched" });
+    } catch (e) {
+      toast({ tone: "error", title: "Dispatch failed", description: (e as Error).message });
     }
   };
 
