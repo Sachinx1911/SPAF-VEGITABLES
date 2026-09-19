@@ -41,6 +41,7 @@ import {
   FilterToggle,
 } from "../../components/ui/FilterPanel";
 import { useDb } from "../../store/useStore";
+import { usePaymentsSync } from "../../store/useApiSync";
 import type { Payment, PaymentMode } from "../../types/models";
 import {
   addDays,
@@ -99,6 +100,8 @@ export function PaymentsListPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [minAmount, setMinAmount] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+
+  usePaymentsSync({ from, to, mode: mode || undefined });
 
   useEffect(() => {
     if (loc.pathname === "/payments/new") setModalOpen(true);

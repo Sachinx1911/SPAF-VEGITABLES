@@ -122,8 +122,22 @@ export function recordPaymentApi(input: PaymentPayload): Promise<{
   });
 }
 
+export interface PaymentRow {
+  id: string;
+  receiptNo: string;
+  customerId: string;
+  invoiceId: string;
+  paymentDate: string;
+  mode: string;
+  reference: string;
+  amount: number;
+  remarks: string;
+  recordedBy: string;
+  recordedAt: string;
+}
+
 export function fetchPayments(q: { customerId?: string; mode?: string; from?: string; to?: string } = {}): Promise<{
-  data: unknown[];
+  data: PaymentRow[];
   total: number;
 }> {
   return api.get('/payments', {

@@ -4,7 +4,8 @@ import { useStore } from './useStore';
 import { fetchOrders, type OrderQuery } from './ordersApi';
 import { fetchCustomers, fetchItems, fetchRoutes, fetchSuppliers } from './mastersApi';
 import { fetchConsolidation } from './consolidationApi';
-import { fetchOutstanding, fetchInvoices, fetchLedger } from './financeApi';
+import { fetchOutstanding, fetchInvoices, fetchLedger, fetchPayments } from './financeApi';
+import type { Payment } from '../types/models';
 import { fetchRequirements, fetchProcurementContext } from './procurementApi';
 import { fetchPackingBoard } from './packingApi';
 import { mapChallanRaw } from './packingApi';
@@ -296,4 +297,34 @@ export function useLedgerSync(customerId: string, from?: string, to?: string) {
   }, [customerId, from, to]);
 
   return { ...state, data };
+}
+
+/**
+ * Fills db.payments from the API so PaymentsList reads real receipts.
+ * Replaces all payments in the store (payments list is short and fully replaced).
+ */
+export function usePaymentsSync(q: Parameters<typeof fetchPayments>[0] = {}): SyncState {
+  const commit = useStore((s) => s.commit);
+  const key = JSON.stringify(q);
+
+  return useSync(async () => {
+    const { data } = await fetchPayments(q);
+    const payments: Payment[] = data.map((r) => ({
+      id: r.id,
+      receiptNo: r.receiptNo,
+      customerId: r.customerId,
+      invoiceId: r.invoiceId,
+      paymentDate: r.paymentDate,
+      mode: r.mode as Payment['mode'],
+      reference: r.reference,
+      amount: r.amount,
+      remarks: r.remarks,
+      recordedBy: r.recordedBy,
+      recordedAt: r.recordedAt,
+    }));
+    const ids = new Set(payments.map((p) => p.id));
+    commit((d) => ({
+      payments: [...d.payments.filter((p) => !ids.has(p.id)), ...payments],
+    }));
+  }, [key, commit]);
 }
