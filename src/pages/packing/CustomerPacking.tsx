@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Check, PackageCheck, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, Check, LoaderCircle, PackageCheck, TriangleAlert } from 'lucide-react';
 import { Card, CardBody, CardHeader, PageHeader } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Select, QtyInput, Checkbox, Textarea } from '../../components/ui/Field';
@@ -11,6 +11,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { getOrCreatePacking, markPacked, raisePackingIssue, setPackageType, setPackedQty } from '../../store/packingActions';
+import { API_MODE } from '../../lib/api';
 import { fmtDate, qty } from '../../lib/format';
 import type { PackageType } from '../../types/models';
 
@@ -26,10 +27,27 @@ export function CustomerPackingPage() {
   const [issueOpen, setIssueOpen] = useState(false);
   const [issueText, setIssueText] = useState('');
   const [checked, setChecked] = useState(false);
+  const [loadingPacking, setLoadingPacking] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
   useEffect(() => {
-    if (orderId && !db.packings.some((p) => p.orderId === orderId)) getOrCreatePacking(orderId, user.id);
-  }, [orderId]);
+    if (!orderId) return;
+
+    if (!API_MODE) {
+      // Demo mode: create locally if not already there.
+      if (!db.packings.some((p) => p.orderId === orderId)) void getOrCreatePacking(orderId, user.id);
+      return;
+    }
+
+    // API mode: always fetch fresh detail so packingItems are populated.
+    setLoadingPacking(true);
+    getOrCreatePacking(orderId, user.id)
+      .catch((e) => {
+        toast({ tone: 'error', title: 'Could not load packing', description: (e as Error).message });
+        nav('/packing');
+      })
+      .finally(() => setLoadingPacking(false));
+  }, [orderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const order = db.orders.find((o) => o.id === orderId);
   const packing = db.packings.find((p) => p.orderId === orderId);
@@ -38,7 +56,14 @@ export function CustomerPackingPage() {
   const items = packing ? db.packingItems.filter((i) => i.packingId === packing.id) : [];
   const itemById = new Map(db.items.map((i) => [i.id, i]));
 
-  if (!order || !customer || !packing) return null;
+  if (loadingPacking || !order || !customer || !packing) {
+    return loadingPacking ? (
+      <div className="flex items-center gap-2 p-8 text-muted">
+        <LoaderCircle size={18} className="animate-spin" />
+        <span className="text-[13px]">Loading packing sheet…</span>
+      </div>
+    ) : null;
+  }
 
   const allPacked = items.every((i) => (i.packedQty ?? 0) >= i.allocatedQty);
   const isDone = packing.status === 'Packed';
@@ -46,9 +71,16 @@ export function CustomerPackingPage() {
   const finish = async () => {
     if (!allPacked && !(await confirm({ title: 'Some items are not fully packed', description: 'Mark packed anyway? Balance quantities will be recorded as short.', tone: 'danger', confirmLabel: 'Mark packed anyway' }))) return;
     if (allPacked && !(await confirm({ title: 'Mark this order packed?', description: 'This generates the delivery challan automatically.', confirmLabel: 'Mark Packed' }))) return;
-    const challan = markPacked(packing.id, user.id);
-    toast({ tone: 'success', title: 'Packed & challan generated', description: challan.challanNo });
-    nav('/packing');
+    setFinishing(true);
+    try {
+      const challan = await markPacked(packing.id, user.id);
+      toast({ tone: 'success', title: 'Packed & challan generated', description: challan.challanNo });
+      nav('/packing');
+    } catch (e) {
+      toast({ tone: 'error', title: 'Packing failed', description: (e as Error).message });
+    } finally {
+      setFinishing(false);
+    }
   };
 
   return (
@@ -60,8 +92,8 @@ export function CustomerPackingPage() {
         actions={
           <>
             <Button variant="secondary" icon={ArrowLeft} onClick={() => nav('/packing')}>Back</Button>
-            {!isDone && <Button variant="danger" icon={TriangleAlert} onClick={() => setIssueOpen(true)}>Raise Issue</Button>}
-            {!isDone && <Button variant="primary" icon={Check} onClick={finish}>Mark Packed</Button>}
+            {!isDone && <Button variant="danger" icon={TriangleAlert} onClick={() => setIssueOpen(true)} disabled={finishing}>Raise Issue</Button>}
+            {!isDone && <Button variant="primary" icon={finishing ? LoaderCircle : Check} onClick={finish} disabled={finishing}>{finishing ? 'Saving…' : 'Mark Packed'}</Button>}
           </>
         }
       />

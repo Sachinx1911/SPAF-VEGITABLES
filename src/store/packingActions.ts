@@ -2,6 +2,12 @@ import type { Challan, PackageType, Packing, PackingItem, Unit } from '../types/
 import { useStore } from './useStore';
 import { uid } from '../lib/id';
 import { nowISO } from '../lib/clock';
+import { API_MODE } from '../lib/api';
+import {
+  fetchPackingDetail,
+  updatePackingApi,
+  verifyPackingApi,
+} from './packingApi';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, customerId: string | null, oldValue: string, newValue: string, status: 'Success' | 'Warning' = 'Success') {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId, oldValue, newValue, device: 'Chrome · Windows', status };
@@ -12,8 +18,67 @@ let dcSeq = 200;
 
 const packageTypeFor = (unit: Unit, qty: number): PackageType => (unit === 'Box' ? 'Box' : unit === 'Kg' && qty >= 10 ? 'Crate' : 'Bag');
 
-/** The packing list is created the first time anyone opens an order to pack it — never re-typed from allocation. */
-export function getOrCreatePacking(orderId: string, userId: string): Packing {
+/**
+ * Opens (or creates) the packing sheet for one order.
+ *
+ * In API mode: hits the server, which does firstOrCreate, then commits the full
+ * detail (packing + lines) into the store so the page renders without knowing
+ * which mode it is in. In demo mode: creates locally and returns synchronously.
+ */
+export async function getOrCreatePacking(orderId: string, userId: string): Promise<Packing> {
+  if (API_MODE) {
+    const { db, commit } = useStore.getState();
+    const res = await fetchPackingDetail(orderId);
+    const raw = res.packing;
+
+    const packing: Packing = {
+      id: String(raw.id),
+      packingNo: raw.packing_no,
+      orderId: String(raw.order_id),
+      customerId: String(raw.customer_id),
+      deliveryDate: raw.delivery_date,
+      status: raw.status as Packing['status'],
+      packages: raw.packages,
+      packedBy: raw.packed_by != null ? String(raw.packed_by) : null,
+      startedAt: raw.started_at,
+      packedAt: raw.packed_at,
+      verified: raw.verified,
+      issue: raw.issue ?? '',
+    };
+
+    const items: PackingItem[] = res.lines.map((l): PackingItem => ({
+      id: l.id,
+      packingId: packing.id,
+      // allocationId and orderItemId are not exposed by the board API — they
+      // are only needed by the local domain functions (which don't run in API mode).
+      allocationId: '',
+      orderItemId: '',
+      itemId: l.itemId,
+      unit: l.unit as Unit,
+      allocatedQty: l.allocatedQty,
+      packedQty: l.packedQty,
+      packageType: l.packageType,
+    }));
+
+    commit((d) => {
+      // Remove any previous entry for this order (could be a board-level stub).
+      const oldPacking = d.packings.find((p) => p.orderId === orderId);
+      return {
+        packings: [...d.packings.filter((p) => p.orderId !== orderId), packing],
+        packingItems: [
+          ...d.packingItems.filter((i) => !oldPacking || i.packingId !== oldPacking.id),
+          ...items,
+        ],
+      };
+    });
+
+    return packing;
+  }
+
+  return getOrCreatePackingLocal(orderId, userId);
+}
+
+function getOrCreatePackingLocal(orderId: string, userId: string): Packing {
   const { db, commit } = useStore.getState();
   const existing = db.packings.find((p) => p.orderId === orderId);
   if (existing) return existing;
@@ -65,8 +130,73 @@ export function raisePackingIssue(packingId: string, issue: string, userId: stri
   }));
 }
 
-/** Marking a packing verified also generates the delivery challan — quantities are pulled from packing, never re-typed. */
-export function markPacked(packingId: string, userId: string): Challan {
+/**
+ * Verifies a packing and generates the delivery challan.
+ *
+ * In API mode: saves all packed quantities, then calls verify which issues the
+ * challan server-side and writes qty_packed into the order chain. Returns the
+ * challan so the caller can show its number in a toast.
+ *
+ * In demo mode: same logic as before, runs fully client-side.
+ */
+export async function markPacked(packingId: string, userId: string): Promise<Challan> {
+  if (API_MODE) {
+    const { db, commit } = useStore.getState();
+    const packing = db.packings.find((p) => p.id === packingId)!;
+    const packingItems = db.packingItems.filter((i) => i.packingId === packingId);
+
+    // Step 1: save all packed qtys (unset lines default to their allocated qty).
+    const lines = packingItems.map((i) => ({
+      id: i.id,
+      packed_qty: i.packedQty ?? i.allocatedQty,
+      package_type: i.packageType,
+    }));
+    await updatePackingApi(packingId, lines, packing.packages || undefined, packing.issue || undefined);
+
+    // Step 2: verify and let the server generate the challan.
+    const { challan: raw } = await verifyPackingApi(packingId);
+
+    const challan: Challan = {
+      id: String(raw.id),
+      challanNo: raw.challan_no,
+      packingId: String(raw.packing_id),
+      orderId: String(raw.order_id),
+      customerId: String(raw.customer_id),
+      routeId: String(raw.route_id ?? ''),
+      challanDate: raw.challan_date,
+      driverId: raw.driver_id != null ? String(raw.driver_id) : null,
+      vehicleNo: raw.vehicle_no ?? '',
+      status: raw.status as Challan['status'],
+      packages: raw.packages,
+      lines: raw.lines.map((l) => ({
+        orderItemId: String(l.order_item_id),
+        itemId: String(l.item_id),
+        unit: l.unit as Unit,
+        qty: Number(l.qty),
+      })),
+      preparedBy: String(raw.prepared_by),
+      packedBy: raw.packed_by != null ? String(raw.packed_by) : null,
+      dispatchedAt: null,
+      deliveredAt: null,
+      receivedByName: '',
+      signature: null,
+      photo: null,
+      deliveryRemarks: '',
+    };
+
+    commit((d) => ({
+      packings: d.packings.map((p) => (p.id === packingId ? { ...p, status: 'Packed', verified: true, packedAt: nowISO() } : p)),
+      orders: d.orders.map((o) => (o.id === challan.orderId ? { ...o, packingStatus: 'Packed', deliveryStatus: 'Ready' } : o)),
+      challans: [...d.challans, challan],
+    }));
+
+    return challan;
+  }
+
+  return markPackedLocal(packingId, userId);
+}
+
+function markPackedLocal(packingId: string, userId: string): Challan {
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const packing = db.packings.find((p) => p.id === packingId)!;

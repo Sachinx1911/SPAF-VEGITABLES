@@ -7,8 +7,9 @@ import { fetchConsolidation } from './consolidationApi';
 import { fetchOutstanding } from './financeApi';
 import { fetchInvoices } from './financeApi';
 import { fetchRequirements, fetchProcurementContext } from './procurementApi';
+import { fetchPackingBoard } from './packingApi';
 import type { RequirementStatus } from '../domain/ops';
-import type { Unit } from '../types/models';
+import type { Packing, Unit } from '../types/models';
 
 /**
  * Fills the store from the API so the screens can stay as they are.
@@ -205,6 +206,49 @@ export function useProcurementSync(): SyncState {
       qualityChecks: ctx.qualityChecks,
     }));
   }, [commit]);
+}
+
+/**
+ * Fills db.packings for a delivery date so PackingDashboard's packingBoard()
+ * shows real statuses without the page needing to know where data came from.
+ *
+ * Only rows that already have a packing record on the server (packingId !== null)
+ * are committed — orders with no packing yet will show "To Pack" via the
+ * domain function's fallback.
+ */
+export function usePackingSync(deliveryDate: string): SyncState {
+  const commit = useStore((s) => s.commit);
+
+  return useSync(async () => {
+    const { rows } = await fetchPackingBoard(deliveryDate);
+    const stubs: Packing[] = rows
+      .filter((r) => r.packingId !== null)
+      .map((r): Packing => ({
+        id: r.packingId!,
+        packingNo: '',
+        orderId: r.orderId,
+        customerId: r.customerId,
+        deliveryDate,
+        status: r.status as Packing['status'],
+        packages: r.packages,
+        packedBy: null,
+        startedAt: null,
+        packedAt: null,
+        verified: r.verified,
+        issue: '',
+      }));
+
+    const orderIds = new Set(rows.map((r) => r.orderId));
+    commit((d) => ({
+      // Keep packings outside this date, plus any detail-loaded packings for
+      // this date (those have packingItems and must not be overwritten).
+      packings: [
+        ...d.packings.filter((p) => !orderIds.has(p.orderId) || d.packingItems.some((i) => i.packingId === p.id)),
+        // Only add stubs where there is no detail-loaded entry yet.
+        ...stubs.filter((s) => !d.packingItems.some((i) => i.packingId === s.id)),
+      ],
+    }));
+  }, [deliveryDate, commit]);
 }
 
 /** Invoices, with the derived status the server computes on the way out. */

@@ -43,6 +43,7 @@ class PackingController extends Controller
                 'routeName' => $o->customer->route?->name,
                 'items' => $allocatedLines->count(),
                 'totalQty' => round((float) $allocatedLines->sum('qty_allocated'), 3),
+                'packingId' => $packing ? (string) $packing->id : null,
                 'status' => $packing?->status ?? ($allocatedLines->isEmpty() ? 'Not Started' : 'To Pack'),
                 'packages' => $packing?->packages ?? 0,
                 'verified' => (bool) $packing?->verified,

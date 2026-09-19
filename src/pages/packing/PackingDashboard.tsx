@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Field';
 import { EmptyState } from '../../components/ui/States';
 import { useDb } from '../../store/useStore';
+import { useOrdersSync, usePackingSync } from '../../store/useApiSync';
 import { packingBoard, packingCounts, type PackingBoardRow } from '../../domain/packing';
 import { fmtTime, num } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
@@ -40,6 +41,9 @@ export function PackingDashboardPage() {
   const nav = useNavigate();
 
   const [date, setDate] = useState(todayISO());
+
+  const { refresh } = useOrdersSync({ deliveryDate: date });
+  usePackingSync(date);
   const [tab, setTab] = useState<TabKey>('To Pack');
   const [search, setSearch] = useState('');
   const [routeId, setRouteId] = useState('');
@@ -120,7 +124,7 @@ export function PackingDashboardPage() {
           </label>
           <Select value={routeId} onChange={(e) => setRouteId(e.target.value)} placeholder="All Routes" className="w-40" options={db.routes.map((r) => ({ value: r.id, label: r.name }))} />
           <Button variant="primary" icon={Printer} onClick={() => window.print()}>Print Packing List</Button>
-          <Button variant="secondary" icon={RefreshCw} onClick={() => setDate((d) => d)}>Refresh</Button>
+          <Button variant="secondary" icon={RefreshCw} onClick={() => void refresh()}>Refresh</Button>
         </div>
       </div>
 
