@@ -56,7 +56,9 @@ DirectoryIndex index.html
   #   No script source other than this origin — no CDN, no inline script.
   #   connect-src 'self' already covers an /api on the same domain. If the API
   #   is put on a subdomain instead, add it here or the browser will block it.
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+  #   BEFORE DEPLOYING WITH API: replace REPLACE_WITH_API_URL below with your
+  #   actual API subdomain, e.g. https://api.svproagro.in
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' REPLACE_WITH_API_URL; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
 
   # The entry document must never be cached — a stale index.html would point at
   # asset filenames that no longer exist after a deploy. Hashed assets are
