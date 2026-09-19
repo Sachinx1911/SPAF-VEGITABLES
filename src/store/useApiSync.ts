@@ -4,8 +4,7 @@ import { useStore } from './useStore';
 import { fetchOrders, type OrderQuery } from './ordersApi';
 import { fetchCustomers, fetchItems, fetchRoutes, fetchSuppliers } from './mastersApi';
 import { fetchConsolidation } from './consolidationApi';
-import { fetchOutstanding } from './financeApi';
-import { fetchInvoices } from './financeApi';
+import { fetchOutstanding, fetchInvoices, fetchLedger } from './financeApi';
 import { fetchRequirements, fetchProcurementContext } from './procurementApi';
 import { fetchPackingBoard } from './packingApi';
 import { mapChallanRaw } from './packingApi';
@@ -284,6 +283,17 @@ export function useInvoicesSync(query: Parameters<typeof fetchInvoices>[0] = {})
   const state = useSync(async () => {
     setData(await fetchInvoices(query));
   }, [key]);
+
+  return { ...state, data };
+}
+
+/** Running ledger for one customer, computed server-side to handle opening balances. */
+export function useLedgerSync(customerId: string, from?: string, to?: string) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchLedger>> | null>(null);
+  const state = useSync(async () => {
+    if (!customerId) return;
+    setData(await fetchLedger(customerId, from, to));
+  }, [customerId, from, to]);
 
   return { ...state, data };
 }

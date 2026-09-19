@@ -4,6 +4,8 @@ import { Button } from "../../components/ui/Button";
 import { Field, Select, Input, Textarea } from "../../components/ui/Field";
 import { InlineError } from "../../components/ui/States";
 import { useCurrentUser, useDb } from "../../store/useStore";
+import { useInvoicesSync } from "../../store/useApiSync";
+import { API_MODE } from "../../lib/api";
 import { recordPayment } from "../../store/financeActions";
 import { useToast } from "../../components/ui/Toast";
 import { invoiceViews } from "../../domain/finance";
@@ -36,7 +38,11 @@ export function RecordPaymentModal({
   const user = useCurrentUser()!;
   const toast = useToast();
   const today = todayISO();
-  const openInvoices = invoiceViews(db, today).filter((i) => i.balance > 0);
+
+  const { data: invoicesData } = useInvoicesSync({ status: 'open' });
+  const openInvoices = API_MODE && invoicesData
+    ? invoicesData.data.filter((r) => r.balance > 0).map((r) => ({ ...r, derivedStatus: r.status }))
+    : invoiceViews(db, today).filter((i) => i.balance > 0);
 
   const [customerId, setCustomerId] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(invoiceId ?? "");
@@ -51,38 +57,47 @@ export function RecordPaymentModal({
   );
   const selected = openInvoices.find((i) => i.id === selectedInvoiceId);
 
-  const save = () => {
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
     if (!selected) return setError("Choose an invoice.");
     if (!amount || amount <= 0) return setError("Enter a valid amount.");
     if (amount > selected.balance + 0.01)
       return setError(
         `Amount exceeds the outstanding balance of ${inr(selected.balance)}.`,
       );
-    const p = recordPayment(
-      {
-        customerId: selected.customerId,
-        invoiceId: selected.id,
-        paymentDate: today,
-        mode,
-        reference,
-        amount,
-        remarks,
-      },
-      user.id,
-    );
-    toast({
-      tone: "success",
-      title: "Payment recorded",
-      description: `${p.receiptNo} · ${inr(amount)}`,
-    });
-    onRecorded?.(p);
-    setAmount(null);
-    setReference("");
-    setRemarks("");
-    setError(null);
-    setSelectedInvoiceId("");
-    setCustomerId("");
-    onClose();
+    setSaving(true);
+    try {
+      const p = await recordPayment(
+        {
+          customerId: selected.customerId,
+          invoiceId: selected.id,
+          paymentDate: today,
+          mode,
+          reference,
+          amount,
+          remarks,
+        },
+        user.id,
+      );
+      toast({
+        tone: "success",
+        title: "Payment recorded",
+        description: `${p.receiptNo} · ${inr(amount)}`,
+      });
+      onRecorded?.(p);
+      setAmount(null);
+      setReference("");
+      setRemarks("");
+      setError(null);
+      setSelectedInvoiceId("");
+      setCustomerId("");
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -95,8 +110,8 @@ export function RecordPaymentModal({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={save}>
-            Save payment
+          <Button variant="primary" onClick={() => void save()} disabled={saving}>
+            {saving ? "Saving…" : "Save payment"}
           </Button>
         </>
       }

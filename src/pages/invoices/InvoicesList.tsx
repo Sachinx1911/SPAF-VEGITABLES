@@ -40,6 +40,8 @@ import {
   FilterToggle,
 } from "../../components/ui/FilterPanel";
 import { useDb } from "../../store/useStore";
+import { useInvoicesSync } from "../../store/useApiSync";
+import { API_MODE } from "../../lib/api";
 import { invoiceViews } from "../../domain/finance";
 import { addDays, fmtDate, inr, inrCompact } from "../../lib/format";
 import { todayISO } from "../../lib/clock";
@@ -96,7 +98,15 @@ export function InvoicesListPage() {
   const [minAmount, setMinAmount] = useState("");
   const [balanceOnly, setBalanceOnly] = useState(false);
 
-  const views = useMemo(() => invoiceViews(db, today), [db, today]);
+  const { data: invoicesData } = useInvoicesSync({ customerId, status, from, to });
+
+  const views = useMemo(() => {
+    if (API_MODE && invoicesData) {
+      return invoicesData.data.map((r) => ({ ...r, derivedStatus: r.status }));
+    }
+    return invoiceViews(db, today);
+  }, [db, today, invoicesData]);
+
   const custById = useMemo(
     () => new Map(db.customers.map((c) => [c.id, c])),
     [db.customers],

@@ -108,6 +108,7 @@ export interface PaymentPayload {
  * corrupt every outstanding figure downstream.
  */
 export function recordPaymentApi(input: PaymentPayload): Promise<{
+  payment: { id: string | number; receipt_no: string };
   invoiceStatus: InvoiceStatus;
   balance: number;
 }> {

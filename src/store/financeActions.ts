@@ -3,6 +3,8 @@ import { useStore } from './useStore';
 import { uid } from '../lib/id';
 import { nowISO, todayISO } from '../lib/clock';
 import { addDays } from '../lib/format';
+import { API_MODE } from '../lib/api';
+import { generateInvoiceApi, recordPaymentApi, type PaymentPayload } from './financeApi';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, customerId: string | null, oldValue: string, newValue: string) {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId, oldValue, newValue, device: 'Chrome · Windows', status: 'Success' as const };
@@ -11,8 +13,36 @@ function auditRow(userId: string, action: string, module: string, recordRef: str
 let invSeq = 2000;
 let rcptSeq = 500;
 
-/** Generates an invoice from an order's delivered/customer-accepted quantities — never re-typed. */
-export function generateInvoice(orderId: string, userId: string): Invoice {
+/**
+ * Generates an invoice from an order's delivered quantities.
+ *
+ * In API mode: the server looks up the delivered quantities and prices — the
+ * browser never supplies quantities, so it cannot manufacture an invoice for
+ * produce that was refused at the door.
+ */
+export async function generateInvoice(orderId: string, userId: string): Promise<Invoice> {
+  if (API_MODE) {
+    const apiInv = await generateInvoiceApi(orderId);
+    // Map the API row to a minimal Invoice for the store so InvoiceDetail can open it.
+    const { commit } = useStore.getState();
+    const invoice: Invoice = {
+      id: String(apiInv.id), invoiceNo: apiInv.invoiceNo, customerId: String(apiInv.customerId),
+      orderId: String(apiInv.orderId), challanId: null,
+      invoiceDate: apiInv.invoiceDate, dueDate: apiInv.dueDate,
+      subtotal: apiInv.subtotal, taxAmount: apiInv.taxAmount, total: apiInv.total,
+      status: 'Generated', createdBy: userId, createdAt: nowISO(),
+    };
+    commit((d) => ({
+      invoices: [...d.invoices.filter((i) => i.orderId !== orderId), invoice],
+      orders: d.orders.map((o) => (o.id === orderId ? { ...o, invoiceStatus: 'Invoiced' } : o)),
+    }));
+    return invoice;
+  }
+
+  return generateInvoiceLocal(orderId, userId);
+}
+
+function generateInvoiceLocal(orderId: string, userId: string): Invoice {
   const { db, commit } = useStore.getState();
   const order = db.orders.find((o) => o.id === orderId)!;
   const customer = db.customers.find((c) => c.id === order.customerId)!;
@@ -43,7 +73,39 @@ export function generateInvoice(orderId: string, userId: string): Invoice {
   return invoice;
 }
 
-export function recordPayment(
+export async function recordPayment(
+  input: { customerId: string; invoiceId: string; paymentDate: string; mode: PaymentMode; reference: string; amount: number; remarks: string },
+  userId: string,
+): Promise<Payment> {
+  if (API_MODE) {
+    const res = await recordPaymentApi({
+      invoiceId: input.invoiceId,
+      amount: input.amount,
+      paymentDate: input.paymentDate,
+      mode: input.mode,
+      reference: input.reference,
+      remarks: input.remarks,
+    } satisfies PaymentPayload);
+    // Return a minimal Payment for the toast. The next list sync will refresh the balances.
+    return {
+      id: String(res.payment.id),
+      receiptNo: res.payment.receipt_no,
+      customerId: input.customerId,
+      invoiceId: input.invoiceId,
+      paymentDate: input.paymentDate,
+      mode: input.mode,
+      reference: input.reference,
+      amount: input.amount,
+      remarks: input.remarks,
+      recordedBy: userId,
+      recordedAt: nowISO(),
+    } as Payment;
+  }
+
+  return recordPaymentLocal(input, userId);
+}
+
+function recordPaymentLocal(
   input: { customerId: string; invoiceId: string; paymentDate: string; mode: PaymentMode; reference: string; amount: number; remarks: string },
   userId: string,
 ): Payment {

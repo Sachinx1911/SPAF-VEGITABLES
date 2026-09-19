@@ -36,6 +36,8 @@ import {
   FilterToggle,
 } from "../../components/ui/FilterPanel";
 import { useDb } from "../../store/useStore";
+import { useOutstandingSync } from "../../store/useApiSync";
+import { API_MODE } from "../../lib/api";
 import {
   customerAgingRows,
   outstandingAsOf,
@@ -95,8 +97,36 @@ export function OutstandingPage() {
   const [minAmount, setMinAmount] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
 
-  const allRows = useMemo(() => customerAgingRows(db, today), [db, today]);
-  const summary = useMemo(() => outstandingSummary(db, today), [db, today]);
+  const { data: apiOutstanding } = useOutstandingSync(today);
+
+  const custById = useMemo(() => new Map(db.customers.map((c) => [c.id, c])), [db.customers]);
+
+  const allRows = useMemo((): CustomerAgingRow[] => {
+    if (API_MODE && apiOutstanding) {
+      return apiOutstanding.rows.flatMap((r) => {
+        const customer = custById.get(r.customerId);
+        if (!customer) return [];
+        return [{
+          customer,
+          total: r.total, current: r.current, d1_30: r.d1_30, d31_60: r.d31_60, d61_90: r.d61_90, d90plus: r.d90plus,
+          invoiceCount: r.invoiceCount, oldestDueDate: r.oldestDueDate, status: r.status,
+        }];
+      });
+    }
+    return customerAgingRows(db, today);
+  }, [db, today, apiOutstanding, custById]);
+
+  const summary = useMemo(() => {
+    if (API_MODE && apiOutstanding) {
+      return {
+        total: apiOutstanding.summary.total, overdue: apiOutstanding.summary.overdue,
+        dueToday: 0, dueSoon: 0,
+        aging: Object.entries(apiOutstanding.summary.buckets).map(([label, amount]) => ({ label, amount, count: 0 })),
+        customers: apiOutstanding.summary.customers,
+      };
+    }
+    return outstandingSummary(db, today);
+  }, [db, today, apiOutstanding]);
   const cities = useMemo(
     () =>
       [...new Set(db.customers.map((c) => c.location).filter(Boolean))].sort(),

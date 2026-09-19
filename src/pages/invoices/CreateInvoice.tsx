@@ -35,13 +35,17 @@ export function CreateInvoicePage() {
       details: [{ label: "Amount", value: inr(amountFor(order)) }],
     });
     if (!ok) return;
-    const inv = generateInvoice(order.id, user.id);
-    toast({
-      tone: "success",
-      title: "Invoice generated",
-      description: inv.invoiceNo,
-    });
-    nav(`/invoices/${inv.id}`);
+    try {
+      const inv = await generateInvoice(order.id, user.id);
+      toast({
+        tone: "success",
+        title: "Invoice generated",
+        description: inv.invoiceNo,
+      });
+      nav(`/invoices/${inv.id}`);
+    } catch (e) {
+      toast({ tone: "error", title: "Failed to generate invoice", description: (e as Error).message });
+    }
   };
 
   const columns: Column<Order>[] = [

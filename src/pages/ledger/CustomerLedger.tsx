@@ -36,6 +36,8 @@ import {
   FilterToggle,
 } from "../../components/ui/FilterPanel";
 import { useDb } from "../../store/useStore";
+import { useLedgerSync } from "../../store/useApiSync";
+import { API_MODE } from "../../lib/api";
 import {
   buildLedger,
   invoiceViews,
@@ -97,10 +99,18 @@ export function CustomerLedgerPage() {
   const [minAmount, setMinAmount] = useState("");
 
   const customer = db.customers.find((c) => c.id === customerId);
-  const allRows = useMemo(
-    () => (customerId ? buildLedger(db, customerId, from, to) : []),
-    [db, customerId, from, to],
-  );
+  const { data: ledgerData } = useLedgerSync(customerId, from, to);
+
+  const allRows = useMemo((): LedgerRow[] => {
+    if (API_MODE && ledgerData) {
+      return ledgerData.rows.map((r) => ({
+        date: r.date, type: r.type as LedgerRow['type'], reference: r.reference,
+        description: r.description, debit: r.debit, credit: r.credit,
+        balance: r.balance, status: r.status as any,
+      }));
+    }
+    return customerId ? buildLedger(db, customerId, from, to) : [];
+  }, [db, customerId, from, to, ledgerData]);
 
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
