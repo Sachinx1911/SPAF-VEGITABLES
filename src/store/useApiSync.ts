@@ -199,6 +199,10 @@ export interface RequirementViewRow {
   stock: number;
   purchased: number;
   toPurchase: number;
+  /** Who this item was last bought from — what the entry screen pre-selects. */
+  lastSupplierId: string | null;
+  /** What it cost that time; a better starting figure than the catalogue price. */
+  lastRate: number | null;
   status: RequirementStatus;
 }
 
@@ -235,7 +239,9 @@ export function useRequirementsSync(deliveryDate: string) {
         r.toBuyQty <= 0 ? 'OK' : ratio > 0.3 ? 'Critical' : 'Purchase Required';
       return {
         itemId: r.itemId, unit: r.unit as Unit, required: r.requiredQty, stock: r.stockQty,
-        purchased: r.purchasedQty, toPurchase: r.toBuyQty, status,
+        purchased: r.purchasedQty, toPurchase: r.toBuyQty,
+        lastSupplierId: r.lastSupplierId, lastRate: r.lastRate ?? r.estimatedRate,
+        status,
       };
     }));
   }, [deliveryDate, commit]);

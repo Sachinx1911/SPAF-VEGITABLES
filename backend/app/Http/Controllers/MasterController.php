@@ -233,7 +233,20 @@ class MasterController extends Controller
 
     public function suppliers(): JsonResponse
     {
-        return response()->json(['suppliers' => Supplier::orderBy('name')->get()]);
+        // Mapped, not dumped: the raw model sends a numeric id and snake_case
+        // keys, so `supplier.id === someId` was false everywhere the front end
+        // compared one, and contactPerson arrived undefined.
+        $suppliers = Supplier::orderBy('name')->get()->map(fn (Supplier $s) => [
+            'id' => (string) $s->id,
+            'code' => $s->code,
+            'name' => $s->name,
+            'market' => $s->market,
+            'contactPerson' => $s->contact_person,
+            'mobile' => $s->mobile,
+            'categories' => $s->categories ?? [],
+        ]);
+
+        return response()->json(['suppliers' => $suppliers]);
     }
 
     /* -------------------------------------------------------------- helpers */

@@ -15,6 +15,10 @@ export interface RequirementRow {
   available: number;
   shortage: number;
   excess: number;
+  /** Who this item was last bought from — what the entry screen pre-selects. */
+  lastSupplierId: string | null;
+  /** What it cost that time; a better starting figure than the catalogue price. */
+  lastRate: number | null;
   status: RequirementStatus;
 }
 
@@ -30,6 +34,22 @@ export function requirementRows(db: Database, deliveryDate: string): Requirement
     purchased.set(l.itemId, (purchased.get(l.itemId) ?? 0) + l.qty);
     poLineIds.add(l.id);
   }
+  // The most recent purchase of each item, whatever date it was for — that is
+  // the supplier and price the buyer would otherwise be re-entering every day.
+  const lastBuy = new Map<string, { supplierId: string; rate: number }>();
+  const poById = new Map(db.purchaseOrders.map((p) => [p.id, p]));
+  const byDateDesc = [...db.purchaseOrderItems].sort((a, b) => {
+    const pa = poById.get(a.purchaseOrderId);
+    const pb = poById.get(b.purchaseOrderId);
+    if (!pa || !pb) return 0;
+    return pa.purchaseDate === pb.purchaseDate ? pb.id.localeCompare(pa.id) : (pa.purchaseDate < pb.purchaseDate ? 1 : -1);
+  });
+  for (const l of byDateDesc) {
+    if (lastBuy.has(l.itemId)) continue;
+    const po = poById.get(l.purchaseOrderId);
+    if (po) lastBuy.set(l.itemId, { supplierId: po.supplierId, rate: l.rate });
+  }
+
   const accepted = new Map<string, number>();
   const riToPoLine = new Map(db.receivingItems.map((ri) => [ri.id, ri.purchaseOrderItemId]));
   for (const qc of db.qualityChecks) {
@@ -57,6 +77,8 @@ export function requirementRows(db: Database, deliveryDate: string): Requirement
         available,
         shortage: Math.max(round3(r.requiredQty - available), 0),
         excess: Math.max(round3(available - r.requiredQty), 0),
+        lastSupplierId: lastBuy.get(r.itemId)?.supplierId ?? null,
+        lastRate: lastBuy.get(r.itemId)?.rate ?? null,
         status,
       };
     });

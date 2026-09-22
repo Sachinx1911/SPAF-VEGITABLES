@@ -37,9 +37,27 @@ class PurchaseController extends Controller
             ->selectRaw('purchase_order_items.item_id as item_id, SUM(purchase_order_items.qty) as total')
             ->pluck('total', 'item_id');
 
-        $rows = $requirements->map(function (PurchaseRequirement $r) use ($purchased) {
+        // Who this item was last bought from, and at what price. The buyer goes
+        // back to the same supplier most days, so pre-filling it turns a
+        // hundred dropdown choices into the handful that actually changed.
+        // Ordered newest first and de-duplicated, so each item keeps its latest.
+        $lastBuy = PurchaseOrderItem::query()
+            ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
+            ->whereIn('purchase_order_items.item_id', $requirements->pluck('item_id'))
+            ->orderByDesc('purchase_orders.purchase_date')
+            ->orderByDesc('purchase_orders.id')
+            ->get([
+                'purchase_order_items.item_id as item_id',
+                'purchase_orders.supplier_id as supplier_id',
+                'purchase_order_items.rate as rate',
+            ])
+            ->unique('item_id')
+            ->keyBy('item_id');
+
+        $rows = $requirements->map(function (PurchaseRequirement $r) use ($purchased, $lastBuy) {
             $already = (float) ($purchased[$r->item_id] ?? 0);
             $toBuy = round(max($r->toBuy() - $already, 0), 3);
+            $last = $lastBuy[$r->item_id] ?? null;
 
             return [
                 'itemId' => (string) $r->item_id,
@@ -51,6 +69,9 @@ class PurchaseController extends Controller
                 'purchasedQty' => $already,
                 'toBuyQty' => $toBuy,
                 'estimatedRate' => (float) $r->item->default_purchase_price,
+                'lastSupplierId' => $last ? (string) $last->supplier_id : null,
+                // What it actually cost last time beats the catalogue price.
+                'lastRate' => $last ? (float) $last->rate : null,
                 // "Critical" means the day cannot be served unless somebody buys
                 // this; "OK" means it is already covered.
                 'status' => $toBuy <= 0 ? 'OK' : ($already > 0 ? 'Partial' : 'Required'),

@@ -43,6 +43,10 @@ export interface RequirementRow {
   /** What still has to be bought, after stock and existing orders. */
   toBuyQty: number;
   estimatedRate: number;
+  /** Who this item was last bought from — what the entry screen pre-selects. */
+  lastSupplierId: string | null;
+  /** What it cost that time; a better starting figure than the catalogue price. */
+  lastRate: number | null;
   status: 'OK' | 'Partial' | 'Required';
 }
 
