@@ -93,6 +93,66 @@ class ConsolidationController extends Controller
             return response()->json(['message' => "Delivery {$date} is already locked."], 422);
         }
 
+        return $this->generate($date, $request->user());
+    }
+
+    /**
+     * Locks the day again, picking up whatever has changed since.
+     *
+     * An order approved after the lock, or one amended before the floor started
+     * work, otherwise has nowhere to go: the requirement is a snapshot, and the
+     * buyer is working from a list that no longer matches the day.
+     *
+     * Refused once packing or dispatch has begun. At that point the requirement
+     * is a record of what was bought against, not a plan that can be restated.
+     */
+    public function relock(Request $request): JsonResponse
+    {
+        $date = $request->validate([
+            'delivery_date' => ['required', 'date_format:Y-m-d'],
+        ])['delivery_date'];
+
+        $lock = ConsolidationLock::whereDate('delivery_date', $date)->first();
+
+        if (! $lock) {
+            return response()->json(['message' => "Delivery {$date} is not locked."], 422);
+        }
+
+        $inMotion = Order::forDelivery($date)
+            ->where(fn ($q) => $q
+                ->whereIn('status', ['Partially Fulfilled', 'Completed'])
+                ->orWhere('packing_status', '!=', 'Not Started')
+                ->orWhere('delivery_status', '!=', 'Pending'))
+            ->exists();
+
+        if ($inMotion) {
+            return response()->json([
+                'message' => "Packing or dispatch has already started for {$date}. The requirement can no longer be re-generated.",
+            ], 422);
+        }
+
+        $user = $request->user();
+
+        DB::transaction(function () use ($lock, $date, $user) {
+            Order::forDelivery($date)->where('status', 'Locked')
+                ->update(['status' => 'Approved', 'locked_at' => null]);
+
+            $lock->orders()->detach();
+            $lock->delete();
+
+            // The requirement is the output of a lock; without one it should not
+            // stand. The next generate writes it again from the current orders.
+            PurchaseRequirement::whereDate('delivery_date', $date)->delete();
+
+            activity_log($user, 'Consolidation unlocked', 'consolidation', "Delivery {$date}", null, 'Locked', 'Approved', 'Warning');
+        });
+
+        return $this->generate($date, $user);
+    }
+
+    /** Sums the approved orders for a date, snapshots the requirement, locks them. */
+    private function generate(string $date, $user): JsonResponse
+    {
         $orders = Order::with('lines')->forDelivery($date)->where('status', 'Approved')->get();
 
         if ($orders->isEmpty()) {
@@ -100,8 +160,6 @@ class ConsolidationController extends Controller
                 'message' => "Nothing is approved for {$date}. Approve orders before locking.",
             ], 422);
         }
-
-        $user = $request->user();
 
         $requirementCount = DB::transaction(function () use ($orders, $date, $user) {
             $lock = ConsolidationLock::create([

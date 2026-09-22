@@ -7,7 +7,7 @@ import { isLateFor } from '../domain/orders';
 import { API_MODE } from '../lib/api';
 import { amendOrderApi, amendPortalOrderApi, approveOrderApi, createOrderApi, createPortalOrderApi, fetchOrder, fetchOrders, rejectOrderApi } from './ordersApi';
 import { fetchPortalOrders } from './portalApi';
-import { lockConsolidationApi } from './consolidationApi';
+import { lockConsolidationApi, relockConsolidationApi } from './consolidationApi';
 
 const emptyChain = (ordered: number): QtyChain => ({
   ordered, approved: null, purchased: null, received: null, accepted: null, allocated: null, packed: null,
@@ -271,6 +271,35 @@ export async function lockConsolidation(deliveryDate: string, userId: string): P
     return;
   }
 
+  lockConsolidationLocal(deliveryDate, userId);
+}
+
+/**
+ * Locks the day again from the orders as they now stand.
+ *
+ * The requirement is a snapshot, so an order approved or amended after the
+ * lock has nowhere to go until it is taken again. The server refuses once
+ * packing or dispatch has started.
+ */
+export async function relockConsolidation(deliveryDate: string, userId: string): Promise<void> {
+  if (API_MODE) {
+    await relockConsolidationApi(deliveryDate);
+    await refreshOrdersForDate(deliveryDate);
+    useStore.getState().commit((d) => ({
+      locks: [
+        ...d.locks.filter((l) => l.deliveryDate !== deliveryDate),
+        { id: uid('lk'), deliveryDate, lockedAt: nowISO(), lockedBy: userId, orderIds: [] },
+      ],
+    }));
+    return;
+  }
+
+  const { commit } = useStore.getState();
+  commit((d) => ({
+    orders: d.orders.map((o) => (o.deliveryDate === deliveryDate && o.status === 'Locked' ? { ...o, status: 'Approved', lockedAt: null } : o)),
+    locks: d.locks.filter((l) => l.deliveryDate !== deliveryDate),
+    requirements: d.requirements.filter((r) => r.deliveryDate !== deliveryDate),
+  }));
   lockConsolidationLocal(deliveryDate, userId);
 }
 

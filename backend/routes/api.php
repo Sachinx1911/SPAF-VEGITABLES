@@ -80,6 +80,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     // Freezing the day and writing the requirement is one transaction.
     Route::post('/consolidation/lock', [ConsolidationController::class, 'lock'])->middleware('perm:consolidation,approve');
+    Route::post('/consolidation/relock', [ConsolidationController::class, 'relock'])->middleware('perm:consolidation,approve');
 
     /* --------------------------------------------------------- purchase */
     Route::middleware('perm:purchase,view')->group(function () {

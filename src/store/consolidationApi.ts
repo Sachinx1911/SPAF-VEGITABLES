@@ -58,6 +58,11 @@ export function lockConsolidationApi(deliveryDate: string): Promise<LockResult> 
   return api.post<LockResult>('/consolidation/lock', { delivery_date: deliveryDate });
 }
 
+/** Unlocks and locks again in one call, picking up whatever changed since. */
+export function relockConsolidationApi(deliveryDate: string): Promise<LockResult> {
+  return api.post<LockResult>('/consolidation/relock', { delivery_date: deliveryDate });
+}
+
 export interface ItemQuantityRow {
   item_id: string;
   name: string;

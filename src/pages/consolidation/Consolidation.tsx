@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  Boxes, ChevronRight, CircleCheck, Download, FileSpreadsheet, Info, LayoutGrid, ListChecks, Lock, Package,
+  Boxes, ChevronRight, CircleCheck, Download, FileSpreadsheet, Info, LayoutGrid, ListChecks, Lock, Package, RefreshCw,
   Printer, Search, Send, ShoppingCart, TrendingUp, Users, type LucideIcon,
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
@@ -10,9 +10,10 @@ import { EmptyState } from '../../components/ui/States';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { lockConsolidation } from '../../store/orderActions';
+import { lockConsolidation, relockConsolidation } from '../../store/orderActions';
 import { useOrdersSync } from '../../store/useApiSync';
 import { buildConsolidation } from '../../domain/orders';
+import { can } from '../../lib/nav';
 import { CATEGORIES, UNITS, type Category } from '../../types/models';
 import { addDays, fmtDate, inr, num } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
@@ -117,6 +118,40 @@ export function ConsolidationPage() {
   const grandTotal = rows.reduce((s, r) => s + r.total, 0);
 
   /* ------------------------------------------------------------ actions */
+
+  const canLock = can(db, user.role, 'consolidation', 'approve');
+  const [regenerating, setRegenerating] = useState(false);
+
+  /**
+   * Takes the day again from the orders as they now stand. The requirement is a
+   * snapshot, so an order approved or amended after the lock has nowhere to go
+   * until it is re-taken. The server refuses once packing or dispatch started.
+   */
+  const regenerate = async () => {
+    const ok = await confirm({
+      title: 'Re-generate the purchase requirement?',
+      description: 'The day is unlocked and locked again from the orders as they stand now. Anything already bought stays, and still counts against what is left to buy.',
+      confirmLabel: 'Re-generate',
+      tone: 'danger',
+      details: [
+        { label: 'Delivery date', value: fmtDate(date) },
+        { label: 'Orders', value: matrix.orders.length },
+        { label: 'Items', value: matrix.rows.length },
+      ],
+    });
+    if (!ok) return;
+
+    setRegenerating(true);
+    try {
+      await relockConsolidation(date, user.id);
+      await refreshOrders();
+    } catch (e) {
+      return toast({ tone: 'error', title: 'Could not re-generate', description: (e as Error).message });
+    } finally {
+      setRegenerating(false);
+    }
+    toast({ tone: 'success', title: 'Purchase requirement re-generated', description: `Rebuilt from ${matrix.orders.length} orders.` });
+  };
 
   const generateRequirement = async () => {
     if (isLocked) return nav('/purchase');
@@ -281,7 +316,14 @@ export function ConsolidationPage() {
                   <p className="mt-0.5 text-[12.5px] leading-relaxed text-emerald-800/80">
                     Orders for {fmtDate(date)} are locked and included in purchase planning.
                   </p>
-                  <Button variant="secondary" size="sm" className="mt-2.5" onClick={() => nav('/orders')}>View Order List</Button>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => nav('/orders')}>View Order List</Button>
+                    {canLock && (
+                      <Button variant="secondary" size="sm" icon={RefreshCw} onClick={regenerate} disabled={regenerating}>
+                        {regenerating ? 'Re-generating…' : 'Re-generate'}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
