@@ -1,0 +1,18 @@
+# Copy to deploy.conf and fill in. deploy.conf is gitignored — it holds the
+# database password and must never be committed.
+
+# The domain the front end is served from. The API is mounted at /api on this
+# same origin, so there is only one domain to configure.
+APP_DOMAIN="example.com"
+
+# From hPanel -> Databases -> MySQL Databases. Hostinger prefixes both names.
+DB_NAME="uXXXXXXX_spaf"
+DB_USER="uXXXXXXX_spaf"
+DB_PASS=""
+
+# The first admin account. The seeder generates its password and prints it once.
+ADMIN_EMAIL="you@example.com"
+ADMIN_NAME="Your Name"
+
+# Absolute path to the front end's web root, where the /api symlink is created.
+PUBLIC_HTML="/home/uXXXXXXX/domains/example.com/public_html"

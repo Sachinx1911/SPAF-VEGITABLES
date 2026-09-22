@@ -10,7 +10,9 @@ backend/.env.*
 !backend/.env.example
 backend/storage/*.key
 spaf-hostinger.zip
-backend-deploy.sh
+
+# deploy credentials (the script itself is safe to commit)
+deploy.conf
 
 # local env
 .env.local

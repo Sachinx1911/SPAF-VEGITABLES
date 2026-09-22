@@ -1,70 +1,115 @@
 #!/usr/bin/env bash
-# SPAF Backend — Hostinger SSH deploy script
-# Run this after SSHing into Hostinger:
-#   ssh uXXXXXXX@your-server-ip
-# Then paste the whole script (or run: bash backend-deploy.sh)
+# SPAF Backend — Hostinger deploy.
 #
-# Fill in these three values before running:
-API_DOMAIN="api.yourdomain.com"        # subdomain you created for the API
-DB_NAME="uXXXXXXX_spaf"              # Hostinger DB name (with prefix)
-DB_USER="uXXXXXXX_spaf"              # Hostinger DB user (with prefix)
-DB_PASS="YOUR_DB_PASSWORD_HERE"       # DB password from hPanel
-ADMIN_EMAIL="admin@svproagro.in"      # your admin email
-ADMIN_NAME="SPAF Admin"               # your admin name
+# Credentials are NOT kept in this file. Copy deploy.conf.example to
+# deploy.conf, fill it in, and keep it out of git:
+#
+#   cp deploy.conf.example deploy.conf
+#   $EDITOR deploy.conf
+#   scp -P <port> backend-deploy.sh deploy.conf <user>@<host>:~/
+#   ssh <user>@<host> 'bash ~/backend-deploy.sh'
+#
+# Written against Laravel 13 on Hostinger Business (LiteSpeed, PHP 8.2+).
 
-set -e   # stop on first error
+set -euo pipefail
 
-# ── 1. Fresh Laravel install ───────────────────────────────────────────────
-cd ~
-composer create-project laravel/laravel spaf-api --prefer-dist --quiet
-cd spaf-api
-composer require laravel/sanctum --quiet
+CONF="$(dirname "$0")/deploy.conf"
+if [ ! -f "$CONF" ]; then
+  echo "deploy.conf not found next to this script. Copy deploy.conf.example and fill it in." >&2
+  exit 1
+fi
+# shellcheck source=/dev/null
+. "$CONF"
 
-# ── 2. Copy SPAF source files ──────────────────────────────────────────────
-# Clone the repo (or upload backend/ via FTP and adjust paths below)
-cd ~
-if [ ! -d "spaf-source" ]; then
-  git clone https://github.com/Sachinx1911/SPAF-VEGITABLES.git spaf-source
+for var in APP_DOMAIN DB_NAME DB_USER DB_PASS ADMIN_EMAIL ADMIN_NAME PUBLIC_HTML; do
+  if [ -z "${!var:-}" ]; then echo "deploy.conf is missing $var" >&2; exit 1; fi
+done
+
+APP_DIR="$HOME/spaf-api"
+SRC_DIR="$HOME/spaf-source"
+
+# ── 1. Laravel skeleton ────────────────────────────────────────────────────
+cd "$HOME"
+if [ ! -f "$APP_DIR/artisan" ]; then
+  composer create-project laravel/laravel spaf-api --prefer-dist --no-interaction
+fi
+cd "$APP_DIR"
+composer require laravel/sanctum --no-interaction
+
+# ── 2. SPAF source ─────────────────────────────────────────────────────────
+if [ ! -d "$SRC_DIR" ]; then
+  git clone https://github.com/Sachinx1911/SPAF-VEGITABLES.git "$SRC_DIR"
+else
+  git -C "$SRC_DIR" pull --ff-only
 fi
 
-cp -r ~/spaf-source/backend/app/*       ~/spaf-api/app/
-cp -r ~/spaf-source/backend/database/*  ~/spaf-api/database/
-cp    ~/spaf-source/backend/routes/api.php ~/spaf-api/routes/api.php
+cp -r "$SRC_DIR/backend/app/."      "$APP_DIR/app/"
+cp -r "$SRC_DIR/backend/database/." "$APP_DIR/database/"
+cp    "$SRC_DIR/backend/routes/api.php" "$APP_DIR/routes/api.php"
 
-# ── 3. Register middleware in bootstrap/app.php ────────────────────────────
-# Inserts the alias block just after ->withMiddleware(function (Middleware $middleware) {
-php -r "
-\$f = file_get_contents('bootstrap/app.php');
-\$inject = \"
-    \\\$middleware->alias([
-        'perm' => App\\\Http\\\Middleware\\\CheckPermission::class,
-        'scope.customer' => App\\\Http\\\Middleware\\\ScopeToCustomer::class,
-    ]);
-\";
-\$f = str_replace(
-  '->withMiddleware(function (Middleware \$middleware) {',
-  '->withMiddleware(function (Middleware \$middleware) {' . \$inject,
-  \$f
-);
-file_put_contents('bootstrap/app.php', \$f);
-echo 'Middleware registered\n';
-" 2>/dev/null || echo "bootstrap/app.php — check manually (pattern not found)"
+# The SPAF schema creates its own users table, with role_key, customer_id and
+# the rest. Laravel's default users migration would create a conflicting one.
+rm -f "$APP_DIR/database/migrations/0001_01_01_000000_create_users_table.php"
 
-# ── 4. Register helpers autoload in composer.json ─────────────────────────
-php -r "
-\$j = json_decode(file_get_contents('composer.json'), true);
-\$j['autoload']['files'][] = 'app/Support/helpers.php';
-file_put_contents('composer.json', json_encode(\$j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-echo 'helpers.php added to autoload\n';
-"
-composer dump-autoload --quiet
+# Sanctum's migration has to be on disk before the first migrate.
+cd "$APP_DIR"
+php artisan vendor:publish --provider='Laravel\Sanctum\SanctumServiceProvider' --no-interaction
+php artisan config:publish cors --no-interaction 2>/dev/null || true
 
-# ── 5. Write .env ──────────────────────────────────────────────────────────
+# ── 3. bootstrap/app.php — routes, prefix, middleware ─────────────────────
+# routes/api.php is not loaded by default in Laravel 11+, and apiPrefix must be
+# empty because the app is mounted at /api by the symlink in step 6 — the URL
+# already carries the prefix before Laravel sees the path.
+php <<'PHPEOF'
+<?php
+$path = 'bootstrap/app.php';
+$f = file_get_contents($path);
+
+if (!str_contains($f, "api: __DIR__")) {
+    $needle = "web: __DIR__.'/../routes/web.php',";
+    $f = str_replace($needle, $needle . "\n        api: __DIR__.'/../routes/api.php',\n        apiPrefix: '',", $f);
+    echo "api routes registered\n";
+}
+
+if (!str_contains($f, "'perm' =>")) {
+    $inject = "\n        \$middleware->alias([\n"
+        . "            'perm' => App\\Http\\Middleware\\CheckPermission::class,\n"
+        . "            'scope.customer' => App\\Http\\Middleware\\ScopeToCustomer::class,\n"
+        . "        ]);";
+    foreach ([
+        '->withMiddleware(function (Middleware $middleware): void {',
+        '->withMiddleware(function (Middleware $middleware) {',
+    ] as $p) {
+        if (str_contains($f, $p)) { $f = str_replace($p, $p . $inject, $f); echo "middleware registered\n"; break; }
+    }
+}
+
+file_put_contents($path, $f);
+PHPEOF
+
+# ── 4. helpers.php autoload ────────────────────────────────────────────────
+php <<'PHPEOF'
+<?php
+$path = 'composer.json';
+$j = json_decode(file_get_contents($path), true);
+$files = $j['autoload']['files'] ?? [];
+if (!in_array('app/Support/helpers.php', $files, true)) {
+    $files[] = 'app/Support/helpers.php';
+    $j['autoload']['files'] = $files;
+    file_put_contents($path, json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+    echo "helpers.php added to autoload\n";
+}
+PHPEOF
+composer dump-autoload --no-interaction
+
+# ── 5. .env ────────────────────────────────────────────────────────────────
+# The API is mounted at /api on the app's own origin, so FRONTEND_URL and
+# APP_URL are the same host and no cross-origin exception is needed.
 cat > .env <<ENV
 APP_NAME="SPAF Operations OS"
 APP_ENV=production
 APP_DEBUG=false
-APP_URL=https://${API_DOMAIN}
+APP_URL=https://${APP_DOMAIN}
 APP_KEY=
 
 LOG_CHANNEL=single
@@ -80,32 +125,36 @@ DB_PASSWORD=${DB_PASS}
 CACHE_STORE=file
 SESSION_DRIVER=file
 SESSION_SECURE_COOKIE=true
-SESSION_DOMAIN=.${API_DOMAIN#api.}
+SESSION_DOMAIN=${APP_DOMAIN}
 
-SANCTUM_STATEFUL_DOMAINS=${API_DOMAIN#api.}
+SANCTUM_STATEFUL_DOMAINS=${APP_DOMAIN}
+FRONTEND_URL=https://${APP_DOMAIN}
 ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_NAME="${ADMIN_NAME}"
 ENV
+chmod 600 .env
 
-# ── 6. Generate app key, run migrations + seed ────────────────────────────
-php artisan key:generate
+php artisan key:generate --force
+
+# ── 6. Mount the API at /api on the front end's origin ────────────────────
+ln -sfn "$APP_DIR/public" "$PUBLIC_HTML/api"
+
+# ── 7. Migrate and seed ────────────────────────────────────────────────────
 php artisan migrate --seed --force
 
 echo ""
 echo "========================================================"
-echo " COPY THE ADMIN PASSWORD ABOVE — it is shown only once "
+echo " COPY THE ADMIN PASSWORD ABOVE — it is shown only once   "
 echo "========================================================"
 echo ""
 
-# ── 7. Permissions ────────────────────────────────────────────────────────
+# ── 8. Permissions and caches ─────────────────────────────────────────────
 chmod -R 755 storage bootstrap/cache
 php artisan storage:link 2>/dev/null || true
 php artisan config:cache
 php artisan route:cache
 
-# ── 8. Cron — print the line to add in hPanel ─────────────────────────────
-echo "Add this cron job in hPanel → Advanced → Cron Jobs (every minute):"
-echo "* * * * * php $(pwd)/artisan schedule:run >> /dev/null 2>&1"
+echo "Add this cron job in hPanel -> Advanced -> Cron Jobs (every minute):"
+echo "* * * * * php ${APP_DIR}/artisan schedule:run >> /dev/null 2>&1"
 echo ""
-echo "Backend deploy complete."
-echo "Subdomain doc root must point to: $(pwd)/public"
+echo "Backend deploy complete. API is live at https://${APP_DOMAIN}/api"

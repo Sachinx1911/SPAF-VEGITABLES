@@ -54,11 +54,10 @@ DirectoryIndex index.html
   #   the inline style attributes used for chart colours and bar widths.
   #   img-src allows data: and blob: for uploaded photos and signature canvases.
   #   No script source other than this origin — no CDN, no inline script.
-  #   connect-src 'self' already covers an /api on the same domain. If the API
-  #   is put on a subdomain instead, add it here or the browser will block it.
-  #   BEFORE DEPLOYING WITH API: replace REPLACE_WITH_API_URL below with your
-  #   actual API subdomain, e.g. https://api.svproagro.in
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' REPLACE_WITH_API_URL; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+  #   connect-src 'self' covers the API, which is mounted at /api on this same
+  #   origin. If the API is ever moved to a subdomain, add that origin here or
+  #   the browser will block every call with no visible error.
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
 
   # The entry document must never be cached — a stale index.html would point at
   # asset filenames that no longer exist after a deploy. Hashed assets are
@@ -79,8 +78,9 @@ DirectoryIndex index.html
 </IfModule>
 
 # ------------------------------------------------------------------ hardening
-# Never serve source maps or project files, should any be uploaded by mistake.
-<FilesMatch "\.(map|lock|ts|tsx|md|yml|yaml)$">
+# Never serve source maps, archives or project files, should any be uploaded by
+# mistake. A deploy zip left in the web root hands out the whole build.
+<FilesMatch "\.(map|lock|ts|tsx|md|yml|yaml|zip|tar|gz|bak|sql)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
