@@ -3,6 +3,8 @@ import { Bell, ClipboardList, Home, Receipt, ShoppingBasket, Sprout, UserRound }
 import { cn } from '../../lib/cn';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { usePortalSync } from '../../store/useApiSync';
+import { ErrorState, LoadingState } from '../ui/States';
+import { API_MODE } from '../../lib/api';
 import { customerOutstanding } from '../../domain/finance';
 import { todayISO } from '../../lib/clock';
 
@@ -19,7 +21,7 @@ export function CustomerShell() {
   // Everything below reads the store, so it is filled once here. Not
   // useMastersSync: those are staff endpoints, and a portal token holds only
   // `portal` permission, so every one of them would answer 403.
-  usePortalSync();
+  const { error, refresh } = usePortalSync();
 
   const db = useDb();
   const user = useCurrentUser();
@@ -29,6 +31,8 @@ export function CustomerShell() {
   // The order screen carries its own back/title bar, so the brand header steps aside.
   const ownHeader = loc.pathname === '/portal/order';
   const dues = user?.customerId ? customerOutstanding(db, todayISO()).get(user.customerId) ?? 0 : 0;
+  // Demo mode seeds the store, so it is ready from the first render.
+  const ready = !API_MODE || db.customers.some((c) => c.id === user?.customerId);
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -49,7 +53,10 @@ export function CustomerShell() {
       )}
 
       <main className={cn('mx-auto w-full max-w-lg flex-1 pb-24', !ownHeader && 'px-4 pt-3')}>
-        <Outlet />
+        {/* Every portal screen takes its own customer as a given. In demo mode
+            the seed guarantees that; against the API the store starts empty, so
+            nothing below renders until the first sync has filled it. */}
+        {ready ? <Outlet /> : error ? <ErrorState description={error} onRetry={refresh} /> : <LoadingState />}
       </main>
 
       <nav className="no-print pb-safe fixed inset-x-0 bottom-0 z-30 mx-auto grid w-full max-w-lg grid-cols-5 border-t border-line bg-white">

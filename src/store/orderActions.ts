@@ -6,6 +6,7 @@ import { addDays } from '../lib/format';
 import { isPastCutoff } from '../domain/orders';
 import { API_MODE } from '../lib/api';
 import { amendOrderApi, amendPortalOrderApi, approveOrderApi, createOrderApi, createPortalOrderApi, fetchOrder, fetchOrders, rejectOrderApi } from './ordersApi';
+import { fetchPortalOrders } from './portalApi';
 import { lockConsolidationApi } from './consolidationApi';
 
 const emptyChain = (ordered: number): QtyChain => ({
@@ -44,6 +45,14 @@ let orderSeq = 1000;
  * screen that just wrote shows what was actually recorded rather than a guess.
  */
 async function refreshOrder(orderId: string): Promise<void> {
+  // GET /orders/{id} is a staff route, so a portal login re-reads its own list
+  // instead. It is at most a hundred rows — the customer's whole history.
+  if (actingAsCustomer()) {
+    const { orders, lines } = await fetchPortalOrders();
+    useStore.getState().commit(() => ({ orders, orderItems: lines }));
+    return;
+  }
+
   const { order, lines } = await fetchOrder(orderId);
   useStore.getState().commit((d) => ({
     orders: [...d.orders.filter((o) => o.id !== order.id), order],
@@ -59,8 +68,9 @@ async function refreshOrder(orderId: string): Promise<void> {
  * endpoint is made here rather than in every page.
  */
 function actingAsCustomer(): boolean {
-  const { db, session } = useStore.getState();
-  return db.users.find((u) => u.id === session?.userId)?.role === 'customer';
+  // apiUser, not a lookup in db.users: a portal login cannot read /users, so
+  // that table is empty for exactly the role this needs to recognise.
+  return useStore.getState().apiUser?.role === 'customer';
 }
 
 /** Creates a new order, flagging it Late automatically if it arrives after the cutoff. */

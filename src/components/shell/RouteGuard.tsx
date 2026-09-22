@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import { useCurrentUser, useStore } from '../../store/useStore';
 import { useIdleTimeout } from './useIdleTimeout';
-import { can } from '../../lib/nav';
+import { can, homePathFor } from '../../lib/nav';
 import type { ModuleKey, PermissionAction } from '../../types/models';
 import { PermissionDeniedPage } from '../../pages/states/StatePages';
 
@@ -19,6 +19,16 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       ? <Navigate to="/session-expired" replace />
       : <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
+
+  // A customer or driver has their own shell. Signing in routes by role, but a
+  // session restored from a stored token starts at whatever the URL says —
+  // which lands a customer on the staff dashboard, reading endpoints their
+  // token is refused. Staff (home '/') may go anywhere they have permission for.
+  const home = homePathFor(user.role);
+  if (home !== '/' && !location.pathname.startsWith(home)) {
+    return <Navigate to={home} replace />;
+  }
+
   return <>{children}</>;
 }
 
