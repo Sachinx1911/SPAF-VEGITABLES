@@ -170,6 +170,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/users/{user}/reset-password', [AdminController::class, 'resetPassword']);
         Route::put('/roles/{role}/permissions', [AdminController::class, 'updatePermissions']);
     });
+    Route::delete('/users/{user}', [AdminController::class, 'destroyUser'])->middleware('perm:users,delete');
 
     Route::get('/settings', [AdminController::class, 'settings'])->middleware('perm:settings,view');
     Route::put('/settings', [AdminController::class, 'updateSettings'])->middleware('perm:settings,edit');

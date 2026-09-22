@@ -69,10 +69,20 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'name' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'email' => ['sometimes', 'email', 'max:160', Rule::unique('users', 'email')->ignore($user->id)],
             'mobile' => ['sometimes', 'nullable', 'string', 'max:20'],
             'role_key' => ['sometimes', 'exists:roles,key'],
             'status' => ['sometimes', Rule::in(['Active', 'Inactive'])],
         ]);
+
+        // The email is the sign-in identifier, so changing it invalidates every
+        // session opened under the old one.
+        if (isset($data['email'])) {
+            $data['email'] = strtolower($data['email']);
+            if ($data['email'] !== $user->email) {
+                $user->tokens()->delete();
+            }
+        }
 
         // Locking out the last admin would leave nobody able to manage the system.
         if (($data['status'] ?? null) === 'Inactive' || ($data['role_key'] ?? $user->role_key) !== 'admin') {
@@ -105,6 +115,36 @@ class AdminController extends Controller
             'password' => $password,
             'notice' => 'All of that user\'s sessions have been signed out.',
         ]);
+    }
+
+    /**
+     * Deletes a login.
+     *
+     * The account goes; nothing it touched does. Orders, invoices and audit rows
+     * name the user by id, so they keep pointing at a row that no longer exists
+     * rather than losing the record of who acted. Deactivating is the reversible
+     * option and is what the UI offers first.
+     */
+    public function destroyUser(Request $request, User $user): JsonResponse
+    {
+        if ($request->user()->id === $user->id) {
+            return response()->json(['message' => 'You cannot delete the account you are signed in with.'], 422);
+        }
+
+        if ($user->role_key === 'admin') {
+            $remaining = User::where('role_key', 'admin')->where('status', 'Active')->where('id', '!=', $user->id)->count();
+            if ($remaining === 0) {
+                return response()->json(['message' => 'This is the last active admin. Promote someone else first.'], 422);
+            }
+        }
+
+        $email = $user->email;
+        $user->tokens()->delete();
+        $user->delete();
+
+        activity_log($request->user(), 'User deleted', 'users', $email, null, $email, '', 'Warning');
+
+        return response()->json(['ok' => true]);
     }
 
     /* ------------------------------------------------------------ roles */

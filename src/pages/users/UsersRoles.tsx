@@ -1,15 +1,21 @@
 import { useState } from 'react';
-import { Check, Plus } from 'lucide-react';
+import { Check, KeyRound, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader, Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusBadge } from '../../components/ui/Badge';
 import { Tabs } from '../../components/ui/Tabs';
+import { Menu } from '../../components/ui/Dropdown';
+import { PasswordOnce } from '../../components/ui/PasswordOnce';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { toggleRolePermission } from '../../store/adminActions';
+import { useUsersSync } from '../../store/useApiSync';
+import { deleteUser, resetUserPassword, toggleRolePermission } from '../../store/adminActions';
 import { PERMISSION_ACTIONS, type ModuleKey, type PermissionAction, type User } from '../../types/models';
 import { fmtDateTime, initials } from '../../lib/format';
 import { UserForm } from './UserForm';
+import { API_MODE } from '../../lib/api';
 import { can } from '../../lib/nav';
 
 const MATRIX_MODULES: ModuleKey[] = [
@@ -21,9 +27,46 @@ export function UsersRolesPage() {
   const db = useDb();
   const actor = useCurrentUser()!;
   const canManage = can(db, actor.role, 'users', 'edit');
+  const canDelete = can(db, actor.role, 'users', 'delete');
+  const { refresh: refreshUsers } = useUsersSync();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [tab, setTab] = useState<'users' | 'roles'>('users');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
+  const [reset, setReset] = useState<{ email: string; password: string } | null>(null);
+
+  const onReset = async (u: User) => {
+    const ok = await confirm({
+      title: `Reset password for ${u.name}?`,
+      description: 'A new password is generated and shown once. Every device signed in as this user is signed out.',
+      confirmLabel: 'Reset password',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      setReset({ email: u.email, password: await resetUserPassword(u.id) });
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not reset password', description: (e as Error).message });
+    }
+  };
+
+  const onDelete = async (u: User) => {
+    const ok = await confirm({
+      title: `Delete ${u.name}?`,
+      description: 'The login is removed for good. What this user already did stays on the record. Deactivating instead keeps the account and is reversible.',
+      confirmLabel: 'Delete login',
+      tone: 'danger',
+      details: [{ label: 'Email', value: u.email }, { label: 'Role', value: db.roles.find((r) => r.key === u.role)?.name ?? u.role }],
+    });
+    if (!ok) return;
+    try {
+      await deleteUser(u.id, actor.id);
+      toast({ tone: 'success', title: 'User deleted', description: u.email });
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not delete user', description: (e as Error).message });
+    }
+  };
 
   const columns: Column<User>[] = [
     {
@@ -39,7 +82,25 @@ export function UsersRolesPage() {
     { key: 'role', header: 'Role', render: (u) => db.roles.find((r) => r.key === u.role)?.name ?? u.role },
     { key: 'status', header: 'Status', render: (u) => <StatusBadge status={u.status} /> },
     { key: 'lastLogin', header: 'Last Login', render: (u) => fmtDateTime(u.lastLogin), hideBelow: 'lg' },
-    ...(canManage ? [{ key: 'actions', header: '', align: 'right' as const, render: (u: User) => <Button size="xs" variant="secondary" onClick={() => setEditing(u)}>Edit</Button> }] : []),
+    ...(canManage ? [{
+      key: 'actions', header: '', align: 'right' as const, render: (u: User) => (
+        <Menu
+          align="right"
+          trigger={(open) => <Button size="xs" variant="ghost" icon={MoreHorizontal} onClick={open} aria-label={`Actions for ${u.name}`} />}
+          items={[
+            { key: 'edit', label: 'Edit', icon: <Pencil size={14} />, onClick: () => setEditing(u) },
+            // Demo mode has no passwords to reset — there is no server holding one.
+            ...(API_MODE ? [{ key: 'reset', label: 'Reset password', icon: <KeyRound size={14} />, onClick: () => onReset(u) }] : []),
+            ...(canDelete ? [{
+              key: 'delete', label: 'Delete', icon: <Trash2 size={14} />, danger: true, divider: true,
+              // The server refuses both of these too; disabling them just explains why first.
+              disabled: u.id === actor.id,
+              onClick: () => onDelete(u),
+            }] : []),
+          ]}
+        />
+      ),
+    }] : []),
   ];
 
   return (
@@ -85,8 +146,17 @@ export function UsersRolesPage() {
         )}
       </div>
 
-      <UserForm open={formOpen} onClose={() => setFormOpen(false)} />
-      <UserForm open={!!editing} onClose={() => setEditing(null)} user={editing} />
+      <UserForm open={formOpen} onClose={() => { setFormOpen(false); void refreshUsers(); }} />
+      <UserForm open={!!editing} onClose={() => { setEditing(null); void refreshUsers(); }} user={editing} />
+      {reset && (
+        <PasswordOnce
+          open
+          title="Password reset"
+          email={reset.email}
+          password={reset.password}
+          onClose={() => setReset(null)}
+        />
+      )}
     </div>
   );
 }

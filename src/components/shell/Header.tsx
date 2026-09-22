@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CalendarDays, ChevronDown, LogOut, Menu, RotateCcw, Search, Settings, Sprout, UserRound } from 'lucide-react';
+import { CalendarDays, ChevronDown, KeyRound, LogOut, Menu, RotateCcw, Search, Settings, Sprout, UserRound } from 'lucide-react';
 import { IconButton } from '../ui/Button';
 import { QuickAdd } from './QuickAdd';
 import { GlobalSearch } from './GlobalSearch';
+import { ChangePassword } from './ChangePassword';
 import { NotificationsMenu } from './NotificationsMenu';
+import { API_MODE } from '../../lib/api';
 import { Menu as DropMenu } from '../ui/Dropdown';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { useToast } from '../ui/Toast';
@@ -23,6 +25,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const confirm = useConfirm();
   const toast = useToast();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const today = todayISO();
 
   const doReset = async () => {
@@ -69,6 +72,8 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           align="right"
           items={[
             { key: 'settings', label: 'Settings', icon: <Settings size={14} />, onClick: () => nav('/settings') },
+            // Demo mode checks no password, so there is none to change.
+            ...(API_MODE ? [{ key: 'password', label: 'Change password', icon: <KeyRound size={14} />, onClick: () => setPasswordOpen(true) }] : []),
             { key: 'divider', label: '', divider: true },
             // Identity switching hands out any role without a password, so it
             // exists only in dev builds and only for an admin.
@@ -95,6 +100,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           )}
         />
       </div>
+      <ChangePassword open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </header>
   );
 }

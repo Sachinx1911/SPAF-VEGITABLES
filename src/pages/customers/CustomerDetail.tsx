@@ -232,7 +232,14 @@ export function CustomerDetailPage() {
               <div>
                 <Button
                   size="sm" variant="primary"
-                  onClick={() => { updateCustomer(customer.id, { specialInstructions: notes }, user.id); toast({ tone: 'success', title: 'Notes saved' }); }}
+                  onClick={async () => {
+                    try {
+                      await updateCustomer(customer.id, { specialInstructions: notes }, user.id);
+                      toast({ tone: 'success', title: 'Notes saved' });
+                    } catch (e) {
+                      toast({ tone: 'error', title: 'Could not save notes', description: (e as Error).message });
+                    }
+                  }}
                 >
                   Save notes
                 </Button>

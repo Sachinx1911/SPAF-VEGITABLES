@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Drawer } from '../../components/ui/Overlay';
 import { Button } from '../../components/ui/Button';
 import { Field, Input, Select, Textarea, Switch } from '../../components/ui/Field';
 import { InlineError } from '../../components/ui/States';
+import { PasswordOnce } from '../../components/ui/PasswordOnce';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useDb, useCurrentUser } from '../../store/useStore';
+import { useUsersSync } from '../../store/useApiSync';
 import { addCustomer, nextCustomerCode, updateCustomer } from '../../store/actions';
+import { addUser, resetUserPassword, updateUser } from '../../store/adminActions';
 import { useToast } from '../../components/ui/Toast';
+import { API_MODE } from '../../lib/api';
+import { can } from '../../lib/nav';
 import { CUSTOMER_TYPES, type Customer } from '../../types/models';
 
 interface CustomerFormProps {
@@ -27,9 +33,24 @@ export function CustomerForm({ open, onClose, customer, onSaved }: CustomerFormP
   const db = useDb();
   const user = useCurrentUser()!;
   const toast = useToast();
+  const confirm = useConfirm();
   const isEdit = !!customer;
   const [form, setForm] = useState(() => (customer ? { ...customer } : emptyForm(nextCustomerCode(db.customers))));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [issued, setIssued] = useState<{ email: string; password: string; title: string } | null>(null);
+
+  // The login that lets this customer place its own orders. There is at most
+  // one: the portal scopes by customer_id, so a second would see the same rows.
+  const login = useMemo(
+    () => (customer ? db.users.find((u) => u.role === 'customer' && u.customerId === customer.id) ?? null : null),
+    [db.users, customer],
+  );
+  const canManageLogins = API_MODE && can(db, user.role, 'users', 'edit');
+  // Without this db.users still holds the seed, so an existing login looks missing.
+  useUsersSync(canManageLogins);
+  const [wantsLogin, setWantsLogin] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -43,23 +64,88 @@ export function CustomerForm({ open, onClose, customer, onSaved }: CustomerFormP
     if (!form.mobile.trim()) e.mobile = 'Mobile number is required.';
     if (!form.location.trim()) e.location = 'Location is required.';
     if (!form.routeId) e.routeId = 'Choose a delivery route.';
+    if (wantsLogin && !isEdit) {
+      if (!loginEmail.trim()) e.loginEmail = 'A sign-in email is required for the portal login.';
+      else if (db.users.some((u) => u.email.toLowerCase() === loginEmail.trim().toLowerCase())) e.loginEmail = 'That email already has a login.';
+    }
+    if (isEdit && login && loginEmail.trim() && db.users.some((u) => u.email.toLowerCase() === loginEmail.trim().toLowerCase() && u.id !== login.id)) {
+      e.loginEmail = 'That email already has a login.';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const save = () => {
+  const save = async () => {
     if (!validate()) return;
-    if (isEdit && customer) {
-      updateCustomer(customer.id, form, user.id);
-      toast({ tone: 'success', title: 'Customer updated', description: form.name });
-      onSaved?.({ ...customer, ...form });
-    } else {
-      const created = addCustomer({ ...form, legalName: form.legalName || form.name }, user.id);
+    setSaving(true);
+    try {
+      if (isEdit && customer) {
+        await updateCustomer(customer.id, form, user.id);
+        // The email is the sign-in ID, so changing it here changes how they log in.
+        if (login && loginEmail.trim() && loginEmail.trim().toLowerCase() !== login.email) {
+          await updateUser(login.id, { email: loginEmail.trim().toLowerCase() }, user.id);
+          toast({ tone: 'info', title: 'Login ID changed', description: 'They have been signed out and must use the new email.' });
+        }
+        toast({ tone: 'success', title: 'Customer updated', description: form.name });
+        onSaved?.({ ...customer, ...form });
+        onClose();
+        return;
+      }
+
+      const created = await addCustomer({ ...form, legalName: form.legalName || form.name }, user.id);
       toast({ tone: 'success', title: 'Customer created', description: `${created.code} · ${created.name}` });
       onSaved?.(created);
+
+      if (wantsLogin && canManageLogins) {
+        const { password } = await addUser(
+          { name: created.name, email: loginEmail.trim().toLowerCase(), mobile: created.mobile, role: 'customer', customerId: created.id },
+          user.id,
+        );
+        if (password) {
+          // Held open until acknowledged — this is the only time the password exists.
+          setIssued({ email: loginEmail.trim().toLowerCase(), password, title: 'Customer login created' });
+          return;
+        }
+      }
+      onClose();
+    } catch (e) {
+      setErrors({ form: (e as Error).message });
+    } finally {
+      setSaving(false);
     }
-    onClose();
   };
+
+  const resetLogin = async () => {
+    if (!login) return;
+    const ok = await confirm({
+      title: `Reset password for ${login.email}?`,
+      description: 'A new password is generated and shown once. Anywhere this customer is signed in gets signed out.',
+      confirmLabel: 'Reset password',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      setIssued({ email: login.email, password: await resetUserPassword(login.id), title: 'Password reset' });
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not reset password', description: (e as Error).message });
+    }
+  };
+
+  if (issued) {
+    return (
+      <PasswordOnce
+        open
+        title={issued.title}
+        email={issued.email}
+        password={issued.password}
+        onClose={() => {
+          const wasNew = !isEdit;
+          setIssued(null);
+          if (wasNew) onClose();
+        }}
+      />
+    );
+  }
 
   return (
     <Drawer
@@ -68,7 +154,7 @@ export function CustomerForm({ open, onClose, customer, onSaved }: CustomerFormP
       title={isEdit ? `Edit ${customer!.name}` : 'Add customer'}
       description={isEdit ? customer!.code : 'New customers appear in Orders and Consolidation once saved.'}
       width="560px"
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>{isEdit ? 'Save changes' : 'Create customer'}</Button></>}
+      footer={<><Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button><Button variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create customer'}</Button></>}
     >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
@@ -111,7 +197,49 @@ export function CustomerForm({ open, onClose, customer, onSaved }: CustomerFormP
 
         <Field label="Special instructions">{(id) => <Textarea id={id} value={form.specialInstructions} onChange={(e) => set('specialInstructions', e.target.value)} rows={2} placeholder="Delivery gate, packaging notes…" />}</Field>
         <Switch checked={form.active} onChange={(v) => set('active', v)} label="Active — can place and receive orders" />
-        {Object.keys(errors).length > 0 && <InlineError>Please fix the highlighted fields.</InlineError>}
+
+        {canManageLogins && (
+          <div className="rounded-lg border border-line bg-canvas p-3.5">
+            <p className="text-[13px] font-semibold text-ink">Portal login</p>
+            <p className="mt-0.5 mb-3 text-[12.5px] leading-relaxed text-muted">
+              Lets this customer sign in and place their own orders. They see only their own
+              orders, invoices and ledger.
+            </p>
+
+            {isEdit ? (
+              login ? (
+                <div className="flex flex-col gap-3">
+                  <Field label="Sign-in email" hint="Changing this signs them out." error={errors.loginEmail}>
+                    {(id) => (
+                      <Input id={id} type="email" value={loginEmail === '' ? login.email : loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)} invalid={!!errors.loginEmail} />
+                    )}
+                  </Field>
+                  <Button variant="secondary" size="sm" onClick={resetLogin}>Reset password</Button>
+                </div>
+              ) : (
+                <p className="text-[12.5px] text-muted">
+                  No login yet. Create one from <span className="font-medium text-ink">Users &amp; Roles</span>.
+                </p>
+              )
+            ) : (
+              <div className="flex flex-col gap-3">
+                <Switch checked={wantsLogin} onChange={setWantsLogin} label="Create a portal login for this customer" />
+                {wantsLogin && (
+                  <Field label="Sign-in email" hint="A password is generated on save and shown once." required error={errors.loginEmail}>
+                    {(id) => (
+                      <Input id={id} type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)}
+                        placeholder={form.email || 'orders@customer.com'} invalid={!!errors.loginEmail} />
+                    )}
+                  </Field>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {errors.form && <InlineError>{errors.form}</InlineError>}
+        {Object.keys(errors).filter((k) => k !== 'form').length > 0 && <InlineError>Please fix the highlighted fields.</InlineError>}
       </div>
     </Drawer>
   );

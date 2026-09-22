@@ -3,6 +3,8 @@ import { useStore } from './useStore';
 import { uid } from '../lib/id';
 import { nowISO } from '../lib/clock';
 import { addDays } from '../lib/format';
+import { API_MODE } from '../lib/api';
+import { createCustomerApi, updateCustomerApi } from './mastersApi';
 
 /**
  * Business actions. Every mutation goes through here so the single-source-of-truth
@@ -27,8 +29,17 @@ export function nextItemCode(items: Item[], prefix: string): string {
 
 type NewCustomer = Omit<Customer, 'id' | 'routeCode' | 'shortLabel' | 'routeOrder' | 'createdAt' | 'active'> & { active?: boolean };
 
-export function addCustomer(input: NewCustomer, userId: string): Customer {
+export async function addCustomer(input: NewCustomer, userId: string): Promise<Customer> {
   const { db, commit } = useStore.getState();
+
+  if (API_MODE) {
+    // The server assigns the code, route code and route order, so two people
+    // adding a customer at once cannot land on the same one.
+    const customer = await createCustomerApi({ ...input, type: input.type, routeId: input.routeId });
+    commit((d) => ({ customers: [...d.customers, customer] }));
+    return customer;
+  }
+
   const routeCode = `U${db.customers.length + 1}`; // user-added customers get a synthetic route code
   const customer: Customer = {
     ...input,
@@ -44,9 +55,16 @@ export function addCustomer(input: NewCustomer, userId: string): Customer {
   return customer;
 }
 
-export function updateCustomer(id: string, patch: Partial<Customer>, userId: string) {
+export async function updateCustomer(id: string, patch: Partial<Customer>, userId: string): Promise<void> {
   const { db, commit } = useStore.getState();
   const before = db.customers.find((c) => c.id === id);
+
+  if (API_MODE) {
+    const customer = await updateCustomerApi(id, patch);
+    commit((d) => ({ customers: d.customers.map((c) => (c.id === id ? customer : c)) }));
+    return;
+  }
+
   commit((d) => ({ customers: d.customers.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
   if (before) {
     const changedKeys = Object.keys(patch).filter((k) => (patch as any)[k] !== (before as any)[k]);

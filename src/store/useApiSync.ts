@@ -3,6 +3,7 @@ import { API_MODE } from '../lib/api';
 import { useStore } from './useStore';
 import { fetchOrders, type OrderQuery } from './ordersApi';
 import { fetchCustomers, fetchItems, fetchRoutes, fetchSuppliers } from './mastersApi';
+import { fetchUsers } from './adminApi';
 import { fetchConsolidation } from './consolidationApi';
 import { fetchOutstanding, fetchInvoices, fetchLedger, fetchPayments } from './financeApi';
 import type { Payment } from '../types/models';
@@ -102,6 +103,22 @@ export function useMastersSync(): SyncState {
 
     commit(() => ({ customers, items, routes, suppliers }));
   }, [signedIn, commit]);
+}
+
+/**
+ * Pulls the real logins into the store.
+ *
+ * Kept out of useMastersSync because only a users,view role may read them —
+ * every other screen would take a 403 on every load for data it never shows.
+ */
+export function useUsersSync(enabled = true): SyncState {
+  const commit = useStore((s) => s.commit);
+
+  return useSync(async () => {
+    if (!enabled) return;
+    const users = await fetchUsers();
+    commit(() => ({ users }));
+  }, [enabled, commit]);
 }
 
 /**

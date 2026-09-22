@@ -26,7 +26,7 @@ interface Props<T> {
   /** Turns one CSV record into a value, or returns an error explaining why not. */
   validate: (record: Record<string, string>, index: number) => ValidateResult<T>;
   /** Called with the rows that passed. Returns how many were actually written. */
-  onImport: (rows: T[]) => number;
+  onImport: (rows: T[]) => number | Promise<number>;
 }
 
 /**
@@ -39,6 +39,7 @@ export function ImportModal<T>({ open, onClose, title, columns, sampleRow, valid
   const [fileName, setFileName] = useState('');
   const [rows, setRows] = useState<ImportRow<T>[]>([]);
   const [done, setDone] = useState<number | null>(null);
+  const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
   const reset = () => { setFileName(''); setRows([]); setDone(null); };
@@ -89,10 +90,17 @@ export function ImportModal<T>({ open, onClose, title, columns, sampleRow, valid
             <Button variant="secondary" onClick={close}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={good.length === 0}
-              onClick={() => setDone(onImport(good.map((r) => r.value)))}
+              disabled={good.length === 0 || importing}
+              onClick={async () => {
+                setImporting(true);
+                try {
+                  setDone(await onImport(good.map((r) => r.value)));
+                } finally {
+                  setImporting(false);
+                }
+              }}
             >
-              Import {good.length || ''} {good.length === 1 ? 'row' : 'rows'}
+              {importing ? 'Importing…' : `Import ${good.length || ''} ${good.length === 1 ? 'row' : 'rows'}`}
             </Button>
           </>
         )

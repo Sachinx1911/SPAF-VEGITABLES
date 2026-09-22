@@ -419,14 +419,14 @@ export function CustomersListPage() {
           }
           return { value: { rec, name, type } };
         }}
-        onImport={(rows) => {
+        onImport={async (rows) => {
           let created = 0;
           const seen = new Set<string>();
           for (const { rec, name, type } of rows) {
             // Guard against the same name twice inside one file.
             if (seen.has(name.toLowerCase())) continue;
             seen.add(name.toLowerCase());
-            addCustomer({
+            await addCustomer({
               code: nextCustomerCode(useStore.getState().db.customers),
               name,
               legalName: pick(rec, 'legal name', 'legalname') || name,
