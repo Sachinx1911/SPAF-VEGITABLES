@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { Bell, ClipboardList, Home, Receipt, ShoppingBasket, Sprout, UserRound } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { useMastersSync } from '../../store/useApiSync';
+import { usePortalSync } from '../../store/useApiSync';
 import { customerOutstanding } from '../../domain/finance';
 import { todayISO } from '../../lib/clock';
 
@@ -16,9 +16,10 @@ const TABS = [
 
 /** A deliberately small, mobile-first shell for the customer role — no sidebar, no dense tables. */
 export function CustomerShell() {
-  // Reference tables come from the server the moment a session exists, so
-  // every screen below reads the same customers, items and routes.
-  useMastersSync();
+  // Everything below reads the store, so it is filled once here. Not
+  // useMastersSync: those are staff endpoints, and a portal token holds only
+  // `portal` permission, so every one of them would answer 403.
+  usePortalSync();
 
   const db = useDb();
   const user = useCurrentUser();

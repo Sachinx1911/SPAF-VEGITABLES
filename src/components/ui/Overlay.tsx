@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from './Button';
 
-function usePortalRoot() {
+export function usePortalRoot() {
   const ref = useRef<HTMLDivElement | null>(null);
   if (!ref.current && typeof document !== 'undefined') {
     ref.current = document.createElement('div');

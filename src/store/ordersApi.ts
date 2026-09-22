@@ -46,7 +46,7 @@ export interface OrderQuery {
   perPage?: number;
 }
 
-const toLine = (l: ApiOrderLine): OrderItem => ({
+export const toLine = (l: ApiOrderLine): OrderItem => ({
   id: l.id,
   orderId: l.orderId,
   itemId: l.itemId,
@@ -57,7 +57,7 @@ const toLine = (l: ApiOrderLine): OrderItem => ({
 });
 
 /** Strips the list-only extras so what lands in the store is exactly an Order. */
-function toOrder(o: ApiOrder): Order {
+export function toOrder(o: ApiOrder): Order {
   const { customerName, customerCode, lineCount, value, lines, ...order } = o;
   void customerName; void customerCode; void lineCount; void value; void lines;
 
@@ -131,6 +131,34 @@ export async function rejectOrderApi(orderId: string, reason: string): Promise<O
 
 export async function amendOrderApi(orderId: string, lines: { itemId: string; qty: number }[]): Promise<Order> {
   const res = await api.put<{ order: ApiOrder }>(`/orders/${orderId}`, {
+    lines: lines.map((l) => ({ item_id: l.itemId, qty: l.qty })),
+  });
+
+  return toOrder(res.order);
+}
+
+/* -------------------------------------------------------- customer portal */
+
+/**
+ * The same two writes, as the customer.
+ *
+ * A portal login has `portal` permission and nothing else, so the staff routes
+ * answer it with 403. These endpoints take the customer from the token instead
+ * of the body, which is also why no customer id is sent.
+ */
+
+export async function createPortalOrderApi(input: { deliveryDate: string; remarks?: string; lines: { itemId: string; qty: number }[] }): Promise<Order> {
+  const res = await api.post<{ order: ApiOrder }>('/portal/orders', {
+    delivery_date: input.deliveryDate,
+    remarks: input.remarks,
+    lines: input.lines.map((l) => ({ item_id: l.itemId, qty: l.qty })),
+  });
+
+  return toOrder(res.order);
+}
+
+export async function amendPortalOrderApi(orderId: string, lines: { itemId: string; qty: number }[]): Promise<Order> {
+  const res = await api.put<{ order: ApiOrder }>(`/portal/orders/${orderId}`, {
     lines: lines.map((l) => ({ item_id: l.itemId, qty: l.qty })),
   });
 

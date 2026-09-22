@@ -91,12 +91,17 @@ export function UsersRolesPage() {
             { key: 'edit', label: 'Edit', icon: <Pencil size={14} />, onClick: () => setEditing(u) },
             // Demo mode has no passwords to reset — there is no server holding one.
             ...(API_MODE ? [{ key: 'reset', label: 'Reset password', icon: <KeyRound size={14} />, onClick: () => onReset(u) }] : []),
-            ...(canDelete ? [{
-              key: 'delete', label: 'Delete', icon: <Trash2 size={14} />, danger: true, divider: true,
-              // The server refuses both of these too; disabling them just explains why first.
-              disabled: u.id === actor.id,
-              onClick: () => onDelete(u),
-            }] : []),
+            // A divider is its own entry — the Menu renders a separator instead
+            // of the item, never as well as it.
+            ...(canDelete ? [
+              { key: 'sep', label: '', divider: true },
+              {
+                key: 'delete', label: 'Delete', icon: <Trash2 size={14} />, danger: true,
+                // The server refuses this too; disabling it just explains why first.
+                disabled: u.id === actor.id,
+                onClick: () => onDelete(u),
+              },
+            ] : []),
           ]}
         />
       ),

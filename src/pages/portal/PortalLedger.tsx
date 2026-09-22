@@ -1,13 +1,23 @@
+import { useMemo } from 'react';
 import { EmptyState } from '../../components/ui/States';
 import { useCurrentUser, useDb } from '../../store/useStore';
+import { usePortalLedgerSync } from '../../store/useApiSync';
 import { buildLedger } from '../../domain/finance';
+import { API_MODE } from '../../lib/api';
 import { fmtDate, inr } from '../../lib/format';
 
 export function PortalLedgerPage() {
   const db = useDb();
   const user = useCurrentUser()!;
-  const rows = user.customerId ? buildLedger(db, user.customerId) : [];
-  const balance = rows.at(-1)?.balance ?? 0;
+  const { data } = usePortalLedgerSync();
+
+  // Computed server-side, because the running balance starts from an opening
+  // balance the browser never sees.
+  const rows = useMemo(
+    () => (API_MODE && data ? data.rows : user.customerId ? buildLedger(db, user.customerId) : []),
+    [data, db, user.customerId],
+  );
+  const balance = (API_MODE && data ? data.summary.closingBalance : rows.at(-1)?.balance) ?? 0;
 
   return (
     <div className="flex flex-col gap-3">

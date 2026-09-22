@@ -29,6 +29,25 @@ class PortalController extends Controller
         return (int) $request->attributes->get('customer_id');
     }
 
+    /**
+     * Amends the customer's own pending order.
+     *
+     * ScopeToCustomer fixes which customer the request speaks for, but the order
+     * id still arrives from the client, so ownership is checked here — route
+     * model binding would otherwise hand over anybody's order.
+     *
+     * The editing rules live in OrderController::update and are not repeated:
+     * the portal decides who may ask, not what an amendment means.
+     */
+    public function amendOrder(Request $request, Order $order): JsonResponse
+    {
+        if ((int) $order->customer_id !== $this->customerId($request)) {
+            return response()->json(['message' => 'That order belongs to another customer.'], 403);
+        }
+
+        return app(OrderController::class)->update($request, $order);
+    }
+
     public function summary(Request $request): JsonResponse
     {
         $customer = Customer::findOrFail($this->customerId($request));
@@ -71,44 +90,67 @@ class PortalController extends Controller
     }
 
     /** The catalogue at this customer's own prices. */
+    /**
+     * What this customer may order, and at what price.
+     *
+     * Items come in the front end's own shape and the customer's price list
+     * comes with them, so the ordering screen works out a rate exactly as the
+     * staff screens do rather than trusting a number sent per item. Only this
+     * customer's prices are included — a price list is commercially sensitive.
+     */
     public function catalogue(Request $request): JsonResponse
     {
         $customerId = $this->customerId($request);
         $date = $request->query('for_date', date('Y-m-d', strtotime('+1 day')));
 
-        $items = Item::active()->orderBy('sort_order')->get()->map(fn (Item $i) => [
-            'id' => (string) $i->id,
-            'name' => $i->name,
-            'unit' => $i->unit,
-            'category' => $i->category,
-            'rate' => CustomerItemPrice::rateFor($customerId, $i->id, $date),
+        $items = Item::active()->orderBy('sort_order')->get()
+            ->map(fn (Item $i) => $i->toPortableArray());
+
+        $prices = CustomerItemPrice::where('customer_id', $customerId)->get()->map(fn (CustomerItemPrice $p) => [
+            'id' => (string) $p->id,
+            'customerId' => (string) $p->customer_id,
+            'itemId' => (string) $p->item_id,
+            'unit' => $p->unit,
+            'price' => (float) $p->price,
+            'effectiveFrom' => $p->effective_from?->toDateString(),
+            'effectiveTo' => $p->effective_to?->toDateString(),
         ]);
 
-        return response()->json(['items' => $items, 'forDate' => $date]);
+        return response()->json(['items' => $items, 'prices' => $prices, 'forDate' => $date]);
     }
 
+    /**
+     * The customer's own orders, in the shape the front end's own model uses.
+     *
+     * Deliberately identical to OrderController::index, minus the customer
+     * filter, which comes from the token. The portal screens read the same
+     * store tables as the staff screens, so a portal-only shape would mean a
+     * second set of mappings that could drift from the first.
+     *
+     * The full quantity chain is included: seeing ordered against delivered is
+     * the point of the screen.
+     */
     public function orders(Request $request): JsonResponse
     {
-        $orders = Order::with('lines.item:id,name,unit')
+        $orders = Order::with(['customer:id,name,code', 'lines'])
             ->where('customer_id', $this->customerId($request))
             ->orderByDesc('delivery_date')
-            ->limit(50)
+            ->orderByDesc('id')
+            ->limit(100)
             ->get()
-            ->map(fn (Order $o) => [
-                'id' => (string) $o->id,
-                'orderNo' => $o->order_no,
-                'deliveryDate' => $o->delivery_date->toDateString(),
-                'status' => $o->status,
-                'deliveryStatus' => $o->delivery_status,
+            ->map(fn (Order $o) => $o->toPortableArray() + [
+                'customerName' => $o->customer?->name,
+                'customerCode' => $o->customer?->code,
+                'lineCount' => $o->lines->count(),
                 'value' => $o->value(),
                 'lines' => $o->lines->map(fn (OrderItem $l) => [
-                    'itemName' => $l->item->name,
+                    'id' => (string) $l->id,
+                    'orderId' => (string) $l->order_id,
+                    'itemId' => (string) $l->item_id,
                     'unit' => $l->unit,
-                    'ordered' => (float) $l->qty_ordered,
-                    // Shown so the customer can see what actually arrived
-                    // against what they asked for, without having to ring up.
-                    'delivered' => $l->qty_delivered === null ? null : (float) $l->qty_delivered,
                     'rate' => (float) $l->rate,
+                    'qty' => $l->chain(),
+                    'remarks' => $l->remarks ?? '',
                 ]),
             ]);
 
@@ -175,9 +217,23 @@ class PortalController extends Controller
 
     public function templates(Request $request): JsonResponse
     {
-        $templates = StandingOrderTemplate::with('lines.item:id,name,unit')
+        // Mapped rather than returned raw: the models are snake_case and the
+        // front end's StandingOrderTemplate nests its lines.
+        $templates = StandingOrderTemplate::with('lines')
             ->where('customer_id', $this->customerId($request))
-            ->get();
+            ->get()
+            ->map(fn (StandingOrderTemplate $t) => [
+                'id' => (string) $t->id,
+                'customerId' => (string) $t->customer_id,
+                'name' => $t->name,
+                'lines' => $t->lines->map(fn (StandingOrderTemplateLine $l) => [
+                    'itemId' => (string) $l->item_id,
+                    'unit' => $l->unit,
+                    'qty' => (float) $l->qty,
+                ]),
+                'createdAt' => $t->created_at?->toIso8601String(),
+                'updatedAt' => $t->updated_at?->toIso8601String(),
+            ]);
 
         return response()->json(['templates' => $templates]);
     }
@@ -226,25 +282,15 @@ class PortalController extends Controller
 
     /* -------------------------------------------------------------- finance */
 
-    public function invoices(Request $request): JsonResponse
+    /**
+     * This customer's invoices, built by InvoiceController's own row mapper so
+     * the portal and the office agree on what is paid, due and overdue.
+     */
+    public function invoices(Request $request, InvoiceController $invoices): JsonResponse
     {
-        $invoices = Invoice::withSum('payments as paid_sum', 'amount')
-            ->where('customer_id', $this->customerId($request))
-            ->where('status', '!=', 'Cancelled')
-            ->orderByDesc('invoice_date')
-            ->limit(100)
-            ->get()
-            ->map(fn (Invoice $i) => [
-                'invoiceNo' => $i->invoice_no,
-                'invoiceDate' => $i->invoice_date->toDateString(),
-                'dueDate' => $i->due_date->toDateString(),
-                'total' => (float) $i->total,
-                'paid' => $i->paidAmount(),
-                'balance' => $i->balance(),
-                'status' => $i->derivedStatus(),
-            ]);
+        $request->merge(['customer_id' => $this->customerId($request)]);
 
-        return response()->json(['invoices' => $invoices]);
+        return $invoices->index($request);
     }
 
     public function ledger(Request $request, LedgerController $ledger): JsonResponse

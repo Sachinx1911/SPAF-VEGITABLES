@@ -5,7 +5,7 @@ import { nowISO, todayISO } from '../lib/clock';
 import { addDays } from '../lib/format';
 import { isPastCutoff } from '../domain/orders';
 import { API_MODE } from '../lib/api';
-import { amendOrderApi, approveOrderApi, createOrderApi, fetchOrder, fetchOrders, rejectOrderApi } from './ordersApi';
+import { amendOrderApi, amendPortalOrderApi, approveOrderApi, createOrderApi, createPortalOrderApi, fetchOrder, fetchOrders, rejectOrderApi } from './ordersApi';
 import { lockConsolidationApi } from './consolidationApi';
 
 const emptyChain = (ordered: number): QtyChain => ({
@@ -51,9 +51,32 @@ async function refreshOrder(orderId: string): Promise<void> {
   }));
 }
 
+/**
+ * True when the signed-in user is a customer placing their own order.
+ *
+ * A portal login holds `portal` permission and nothing else, so the staff order
+ * routes refuse it. The portal pages call these same actions, so the choice of
+ * endpoint is made here rather than in every page.
+ */
+function actingAsCustomer(): boolean {
+  const { db, session } = useStore.getState();
+  return db.users.find((u) => u.id === session?.userId)?.role === 'customer';
+}
+
 /** Creates a new order, flagging it Late automatically if it arrives after the cutoff. */
 export async function createOrder(input: NewOrderInput, userId: string): Promise<Order> {
   if (API_MODE) {
+    if (actingAsCustomer()) {
+      // The customer comes from the token, so the id in `input` is not sent.
+      const order = await createPortalOrderApi({
+        deliveryDate: input.deliveryDate,
+        remarks: input.remarks,
+        lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+      });
+      await refreshOrder(order.id);
+      return order;
+    }
+
     // The server decides the order number, the late flag and every rate, so
     // none of them can be set from a browser tab.
     const order = await createOrderApi({
@@ -123,7 +146,10 @@ function createOrderLocal(input: NewOrderInput, userId: string): Order {
  */
 export async function amendOrder(orderId: string, lines: NewOrderLine[], userId: string): Promise<Order> {
   if (API_MODE) {
-    const order = await amendOrderApi(orderId, lines.map((l) => ({ itemId: l.itemId, qty: l.qty })));
+    const payload = lines.map((l) => ({ itemId: l.itemId, qty: l.qty }));
+    const order = actingAsCustomer()
+      ? await amendPortalOrderApi(orderId, payload)
+      : await amendOrderApi(orderId, payload);
     await refreshOrder(orderId);
     return order;
   }

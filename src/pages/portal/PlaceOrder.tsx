@@ -294,7 +294,13 @@ export function PlaceOrderPage() {
                 <button
                   onClick={async () => {
                     const ok = await confirm({ title: `Delete "${t.name}"?`, tone: 'danger', confirmLabel: 'Delete' });
-                    if (ok) { deleteTemplate(t.id, user.id); toast({ tone: 'success', title: 'Regular order deleted' }); }
+                    if (!ok) return;
+                    try {
+                      await deleteTemplate(t.id, user.id);
+                      toast({ tone: 'success', title: 'Regular order deleted' });
+                    } catch (e) {
+                      toast({ tone: 'error', title: 'Could not delete', description: (e as Error).message });
+                    }
                   }}
                   aria-label={`Delete ${t.name}`}
                   className="shrink-0 rounded p-1.5 text-subtle hover:bg-canvas hover:text-red-600"
@@ -486,8 +492,12 @@ export function PlaceOrderPage() {
         open={saveOpen}
         onClose={() => setSaveOpen(false)}
         defaultName={templates.length ? `Regular Order ${templates.length + 1}` : 'Daily Regular'}
-        onSave={(name) => {
-          saveTemplate(customer.id, name, basket.lines.map((l) => ({ itemId: l.itemId, unit: l.unit, qty: l.qty })), user.id);
+        onSave={async (name) => {
+          try {
+            await saveTemplate(customer.id, name, basket.lines.map((l) => ({ itemId: l.itemId, unit: l.unit, qty: l.qty })), user.id);
+          } catch (e) {
+            return toast({ tone: 'error', title: 'Could not save', description: (e as Error).message });
+          }
           setSaveOpen(false);
           toast({ tone: 'success', title: 'Regular order saved', description: `"${name}" — use it next time in one tap.` });
         }}

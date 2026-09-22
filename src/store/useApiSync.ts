@@ -4,6 +4,7 @@ import { useStore } from './useStore';
 import { fetchOrders, type OrderQuery } from './ordersApi';
 import { fetchCustomers, fetchItems, fetchRoutes, fetchSuppliers } from './mastersApi';
 import { fetchUsers } from './adminApi';
+import { fetchPortalCatalogue, fetchPortalInvoices, fetchPortalLedger, fetchPortalOrders, fetchPortalSummary, fetchPortalTemplates } from './portalApi';
 import { fetchConsolidation } from './consolidationApi';
 import { fetchOutstanding, fetchInvoices, fetchLedger, fetchPayments } from './financeApi';
 import type { Payment } from '../types/models';
@@ -102,6 +103,42 @@ export function useMastersSync(): SyncState {
     ]);
 
     commit(() => ({ customers, items, routes, suppliers }));
+  }, [signedIn, commit]);
+}
+
+/**
+ * Fills the store for a customer-portal login.
+ *
+ * The portal screens read the same tables as the office screens, but none of
+ * the endpoints those tables normally come from will answer a portal token —
+ * it holds `portal` permission and nothing else. So this is the portal's
+ * equivalent of useMastersSync plus useOrdersSync, in one pass, and every row
+ * it fetches is already scoped to the customer on the token.
+ */
+export function usePortalSync(): SyncState {
+  const commit = useStore((s) => s.commit);
+  const signedIn = useStore((s) => !!s.session);
+
+  return useSync(async () => {
+    if (!signedIn) return;
+
+    const [summary, catalogue, orders, templates] = await Promise.all([
+      fetchPortalSummary(),
+      fetchPortalCatalogue(),
+      fetchPortalOrders(),
+      fetchPortalTemplates(),
+    ]);
+
+    commit((d) => ({
+      // One customer, because that is all a portal login can ever see.
+      customers: [summary.customer],
+      settings: { ...d.settings, orderCutoffTime: summary.cutoffTime },
+      items: catalogue.items,
+      prices: catalogue.prices,
+      orders: orders.orders,
+      orderItems: orders.lines,
+      standingTemplates: templates,
+    }));
   }, [signedIn, commit]);
 }
 
@@ -301,6 +338,31 @@ export function useInvoicesSync(query: Parameters<typeof fetchInvoices>[0] = {})
   const state = useSync(async () => {
     setData(await fetchInvoices(query));
   }, [key]);
+
+  return { ...state, data };
+}
+
+/**
+ * The portal's own invoices and ledger.
+ *
+ * Separate from the two hooks below only because the staff endpoints they call
+ * refuse a portal token. The shapes returned are identical, so the screens
+ * render them the same way.
+ */
+export function usePortalInvoicesSync() {
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchPortalInvoices>> | null>(null);
+  const state = useSync(async () => {
+    setData(await fetchPortalInvoices());
+  }, []);
+
+  return { ...state, data };
+}
+
+export function usePortalLedgerSync() {
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchPortalLedger>> | null>(null);
+  const state = useSync(async () => {
+    setData(await fetchPortalLedger());
+  }, []);
 
   return { ...state, data };
 }

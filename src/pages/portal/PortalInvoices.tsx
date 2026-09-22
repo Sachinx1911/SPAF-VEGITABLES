@@ -1,7 +1,10 @@
+import { useMemo } from 'react';
 import { EmptyState } from '../../components/ui/States';
 import { StatusBadge } from '../../components/ui/Badge';
 import { useCurrentUser, useDb } from '../../store/useStore';
+import { usePortalInvoicesSync } from '../../store/useApiSync';
 import { invoiceViews } from '../../domain/finance';
+import { API_MODE } from '../../lib/api';
 import { todayISO } from '../../lib/clock';
 import { fmtDate, inr } from '../../lib/format';
 
@@ -9,7 +12,16 @@ export function PortalInvoicesPage() {
   const db = useDb();
   const user = useCurrentUser()!;
   const today = todayISO();
-  const invoices = invoiceViews(db, today).filter((i) => i.customerId === user.customerId).sort((a, b) => (a.invoiceDate < b.invoiceDate ? 1 : -1));
+  const { data } = usePortalInvoicesSync();
+
+  const invoices = useMemo(() => {
+    // The server has already worked out paid, balance and whether it is overdue.
+    const rows = API_MODE && data
+      ? data.map((r) => ({ ...r, derivedStatus: r.status }))
+      : invoiceViews(db, today).filter((i) => i.customerId === user.customerId);
+
+    return [...rows].sort((a, b) => (a.invoiceDate < b.invoiceDate ? 1 : -1));
+  }, [data, db, today, user.customerId]);
 
   return (
     <div className="flex flex-col gap-3">

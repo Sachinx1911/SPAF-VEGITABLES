@@ -182,6 +182,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/catalogue', [PortalController::class, 'catalogue']);
         Route::get('/orders', [PortalController::class, 'orders']);
         Route::post('/orders', [PortalController::class, 'placeOrder'])->middleware('perm:portal,create');
+        Route::put('/orders/{order}', [PortalController::class, 'amendOrder'])->middleware('perm:portal,edit');
         Route::get('/templates', [PortalController::class, 'templates']);
         Route::post('/templates', [PortalController::class, 'saveTemplate']);
         Route::delete('/templates/{template}', [PortalController::class, 'deleteTemplate']);
