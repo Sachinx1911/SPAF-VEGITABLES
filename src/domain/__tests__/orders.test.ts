@@ -1,28 +1,55 @@
 import { describe, expect, it } from 'vitest';
 import { generateSeed } from '../../data/seed/generate';
-import { buildConsolidation, isPastCutoff, nextDeliveryDate, rateFor, splitEven } from '../orders';
+import { buildConsolidation, isLateFor, nextDeliveryDate, rateFor, splitEven } from '../orders';
 
-const CUTOFF = '22:00';
+const EVENING = '22:00';
+const SMALL_HOURS = '03:00';
 
-describe('order cutoff', () => {
-  it('treats a time before the cutoff as on time', () => {
-    expect(isPastCutoff('2026-09-13T21:59:00', CUTOFF)).toBe(false);
+describe('order cutoff — evening (22:00, closes the night before)', () => {
+  it('accepts an order placed before the cutoff for next-day delivery', () => {
+    expect(isLateFor('2026-09-14', '2026-09-13T21:59:00', EVENING)).toBe(false);
   });
 
-  it('treats the cutoff minute itself as past', () => {
-    expect(isPastCutoff('2026-09-13T22:00:00', CUTOFF)).toBe(true);
+  it('treats the cutoff minute itself as still in time', () => {
+    expect(isLateFor('2026-09-14', '2026-09-13T22:00:00', EVENING)).toBe(false);
   });
 
-  it('treats a time after the cutoff as past', () => {
-    expect(isPastCutoff('2026-09-13T23:30:00', CUTOFF)).toBe(true);
+  it('marks an order placed after the cutoff as late for next-day delivery', () => {
+    expect(isLateFor('2026-09-14', '2026-09-13T23:30:00', EVENING)).toBe(true);
   });
 
   it('delivers next day when the order arrives before the cutoff', () => {
-    expect(nextDeliveryDate('2026-09-13', '2026-09-13T10:00:00', CUTOFF)).toBe('2026-09-14');
+    expect(nextDeliveryDate('2026-09-13', '2026-09-13T10:00:00', EVENING)).toBe('2026-09-14');
   });
 
   it('pushes delivery a further day when the order arrives after the cutoff', () => {
-    expect(nextDeliveryDate('2026-09-13', '2026-09-13T23:00:00', CUTOFF)).toBe('2026-09-15');
+    expect(nextDeliveryDate('2026-09-13', '2026-09-13T23:00:00', EVENING)).toBe('2026-09-15');
+  });
+});
+
+describe('order cutoff — small hours (03:00, closes on the delivery day)', () => {
+  it('accepts an evening order for next-day delivery', () => {
+    expect(isLateFor('2026-09-14', '2026-09-13T21:00:00', SMALL_HOURS)).toBe(false);
+  });
+
+  it('still accepts an order placed after midnight, for that same day', () => {
+    expect(isLateFor('2026-09-14', '2026-09-14T02:30:00', SMALL_HOURS)).toBe(false);
+  });
+
+  it('marks an order placed after 03:00 as late for that day', () => {
+    expect(isLateFor('2026-09-14', '2026-09-14T04:00:00', SMALL_HOURS)).toBe(true);
+  });
+
+  it('offers same-day delivery to an order placed in the small hours', () => {
+    expect(nextDeliveryDate('2026-09-14', '2026-09-14T02:30:00', SMALL_HOURS)).toBe('2026-09-14');
+  });
+
+  it('offers next-day delivery once the window has closed', () => {
+    expect(nextDeliveryDate('2026-09-14', '2026-09-14T04:00:00', SMALL_HOURS)).toBe('2026-09-15');
+  });
+
+  it('offers next-day delivery during the working day', () => {
+    expect(nextDeliveryDate('2026-09-13', '2026-09-13T15:00:00', SMALL_HOURS)).toBe('2026-09-14');
   });
 });
 

@@ -12,9 +12,9 @@ import { useCurrentUser, useDb } from '../../store/useStore';
 import { amendOrder, createOrder } from '../../store/orderActions';
 import { saveTemplate, deleteTemplate } from '../../store/templateActions';
 import type { Item } from '../../types/models';
-import { editableOrder, isPastCutoff, nextDeliveryDate, previousOrder, rateFor } from '../../domain/orders';
+import { editableOrder, nextDeliveryDate, previousOrder, rateFor } from '../../domain/orders';
 import { todayISO, nowISO } from '../../lib/clock';
-import { fmtDate, inr, weekday } from '../../lib/format';
+import { addDays, fmtDate, inr, weekday } from '../../lib/format';
 import { useOrderBasket } from '../orders/useOrderBasket';
 import { itemEmoji } from '../orders/orderUi';
 import { cn } from '../../lib/cn';
@@ -52,7 +52,10 @@ export function PlaceOrderPage() {
   const [appliedTemplate, setAppliedTemplate] = useState(false);
 
   const prev = previousOrder(db, customer.id);
-  const pastCutoff = isPastCutoff(nowISO(), db.settings.orderCutoffTime);
+  // Worth saying only when the nearest slot has actually gone: with a
+  // small-hours cutoff the next window opens the moment the last one closes,
+  // so there is nothing to warn about.
+  const missedNearestSlot = deliveryDate > addDays(today, 1);
   const templates = db.standingTemplates.filter((t) => t.customerId === customer.id);
 
   /* --------------------------------------------- tracking what they changed */
@@ -270,9 +273,9 @@ export function PlaceOrderPage() {
           </button>
         )}
 
-        {pastCutoff && (
+        {missedNearestSlot && (
           <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-[12.5px] text-amber-800">
-            Today's {db.settings.orderCutoffTime} cutoff has passed — this order delivers {weekday(deliveryDate)}, {fmtDate(deliveryDate)}.
+            The {db.settings.orderCutoffTime} cutoff has passed — this order delivers {weekday(deliveryDate)}, {fmtDate(deliveryDate)}.
           </p>
         )}
 

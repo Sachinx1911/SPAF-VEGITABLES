@@ -2,8 +2,8 @@ import { useNavigate } from 'react-router';
 import { ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock, ListChecks, Truck, Wallet } from 'lucide-react';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { todayISO, nowISO } from '../../lib/clock';
-import { fmtDate, inr, parseISO, weekday } from '../../lib/format';
-import { customerFavourites, editableOrder, isPastCutoff, nextDeliveryDate } from '../../domain/orders';
+import { addDays, fmtDate, inr, parseISO, weekday } from '../../lib/format';
+import { customerFavourites, cutoffMoment, editableOrder, nextDeliveryDate } from '../../domain/orders';
 import { customerOutstanding, invoiceViews } from '../../domain/finance';
 import { cn } from '../../lib/cn';
 import { ProduceArt } from './ProduceArt';
@@ -24,8 +24,11 @@ export function PortalHomePage() {
   const now = nowISO();
 
   const cutoff = db.settings.orderCutoffTime;
-  const pastCutoff = isPastCutoff(now, cutoff);
   const deliveryDate = nextDeliveryDate(today, now, cutoff);
+  // A small-hours cutoff closes on the delivery day itself, so "order by 03:00"
+  // can mean tonight, tomorrow morning, or later — say which.
+  const closesOn = cutoffMoment(deliveryDate, cutoff).slice(0, 10);
+  const closesLabel = closesOn === today ? 'today' : closesOn === addDays(today, 1) ? 'tomorrow' : weekday(closesOn);
   const pending = editableOrder(db, customer.id, deliveryDate);
   const arrivingToday = db.orders.find((o) => o.customerId === customer.id && o.deliveryDate === today);
   const templates = db.standingTemplates.filter((t) => t.customerId === customer.id);
@@ -85,7 +88,7 @@ export function PortalHomePage() {
           </button>
 
           <p className="mt-2 text-center text-[11.5px] text-subtle">
-            Delivery {weekday(deliveryDate)}, {fmtDate(deliveryDate)} · order by {cutoff} {pastCutoff ? 'tomorrow' : 'today'}
+            Delivery {weekday(deliveryDate)}, {fmtDate(deliveryDate)} · order by {cutoff} {closesLabel}
           </p>
         </div>
       </div>

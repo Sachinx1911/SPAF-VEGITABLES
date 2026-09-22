@@ -54,9 +54,7 @@ class PortalController extends Controller
         $today = now()->toDateString();
 
         $cutoff = (string) setting('order_cutoff_time', '22:00');
-        $nextDelivery = Order::isLateArrival(date('Y-m-d', strtotime('+1 day')), now())
-            ? date('Y-m-d', strtotime('+2 days'))
-            : date('Y-m-d', strtotime('+1 day'));
+        $nextDelivery = Order::nextDeliveryDate(now());
 
         $pending = Order::where('customer_id', $customer->id)
             ->whereDate('delivery_date', $nextDelivery)

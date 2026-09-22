@@ -89,15 +89,47 @@ class Order extends Model
      * An order is late when it arrives after the cutoff for a delivery that is
      * today or tomorrow — the kitchen has already been planned around it.
      */
+    /**
+     * The moment ordering closes for a delivery date.
+     *
+     * Noon separates the two readings of a cutoff time. An evening one — 22:00 —
+     * closes the night *before* delivery. A small-hours one — 03:00 — closes in
+     * the early morning *of* the delivery day, so the ordering window runs past
+     * midnight. Comparing clock times alone cannot tell these apart: 21:00 is
+     * "after" 03:00 by that measure, which would close a window still open.
+     */
+    public static function cutoffMoment(string $deliveryDate, ?string $cutoff = null): \DateTimeImmutable
+    {
+        $cutoff ??= (string) setting('order_cutoff_time', '22:00');
+        $date = $cutoff < '12:00'
+            ? $deliveryDate
+            : date('Y-m-d', strtotime($deliveryDate . ' -1 day'));
+
+        return new \DateTimeImmutable("{$date} {$cutoff}:00");
+    }
+
+    /** True when an order for this delivery date arrives after ordering closed. */
     public static function isLateArrival(string $deliveryDate, \DateTimeInterface $receivedAt): bool
     {
-        $cutoff = (string) setting('order_cutoff_time', '22:00');
-        [$h, $m] = array_map('intval', explode(':', $cutoff));
+        return $receivedAt > self::cutoffMoment($deliveryDate);
+    }
 
-        $past = ((int) $receivedAt->format('H') * 60 + (int) $receivedAt->format('i')) >= ($h * 60 + $m);
-        $soon = $deliveryDate <= date('Y-m-d', strtotime($receivedAt->format('Y-m-d') . ' +1 day'));
+    /**
+     * The soonest delivery date an order placed now can still make. Today is a
+     * candidate: with a 03:00 cutoff, an order at 02:00 is in time for that day.
+     */
+    public static function nextDeliveryDate(\DateTimeInterface $now): string
+    {
+        $today = $now->format('Y-m-d');
 
-        return $past && $soon;
+        for ($d = 0; $d <= 3; $d++) {
+            $date = date('Y-m-d', strtotime("{$today} +{$d} day"));
+            if (! self::isLateArrival($date, $now)) {
+                return $date;
+            }
+        }
+
+        return date('Y-m-d', strtotime("{$today} +1 day"));
     }
 
     /** Order value from whichever stage is furthest along — what the customer would be billed today. */

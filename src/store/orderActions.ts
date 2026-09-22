@@ -3,7 +3,7 @@ import { useStore } from './useStore';
 import { uid } from '../lib/id';
 import { nowISO, todayISO } from '../lib/clock';
 import { addDays } from '../lib/format';
-import { isPastCutoff } from '../domain/orders';
+import { isLateFor } from '../domain/orders';
 import { API_MODE } from '../lib/api';
 import { amendOrderApi, amendPortalOrderApi, approveOrderApi, createOrderApi, createPortalOrderApi, fetchOrder, fetchOrders, rejectOrderApi } from './ordersApi';
 import { fetchPortalOrders } from './portalApi';
@@ -109,7 +109,7 @@ function createOrderLocal(input: NewOrderInput, userId: string): Order {
   const { db, commit } = useStore.getState();
   const now = nowISO();
   const today = todayISO();
-  const late = !input.draft && isPastCutoff(now, db.settings.orderCutoffTime) && input.deliveryDate <= addDays(today, 1);
+  const late = !input.draft && isLateFor(input.deliveryDate, now, db.settings.orderCutoffTime);
 
   const order: Order = {
     id: uid('o'),
@@ -171,7 +171,7 @@ function amendOrderLocal(orderId: string, lines: NewOrderLine[], userId: string)
   const { db, commit } = useStore.getState();
   const order = db.orders.find((o) => o.id === orderId)!;
   const now = nowISO();
-  const late = isPastCutoff(now, db.settings.orderCutoffTime) && order.deliveryDate <= addDays(todayISO(), 1);
+  const late = isLateFor(order.deliveryDate, now, db.settings.orderCutoffTime);
   const existing = new Map(db.orderItems.filter((l) => l.orderId === orderId).map((l) => [l.itemId, l]));
 
   const next: OrderItem[] = lines.map((l) => {

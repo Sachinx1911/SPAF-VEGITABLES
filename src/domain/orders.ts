@@ -72,14 +72,41 @@ export function editableOrder(db: Database, customerId: string, deliveryDate: st
   return { ...order, lines: db.orderItems.filter((l) => l.orderId === order.id) };
 }
 
-export function isPastCutoff(nowIso: string, cutoff: string): boolean {
-  const hhmm = nowIso.slice(11, 16);
-  return hhmm >= cutoff;
+/**
+ * Noon separates the two readings of a cutoff time.
+ *
+ * An evening cutoff — 22:00 — closes ordering the night *before* delivery. A
+ * small-hours one — 03:00 — closes in the early morning *of* the delivery day,
+ * so the ordering window runs past midnight. Comparing clock times alone cannot
+ * tell these apart: 21:00 is "after" 03:00 by that measure, which would close
+ * an ordering window that is in fact still open.
+ */
+const SAME_DAY_CUTOFF_BEFORE = '12:00';
+
+/** The moment ordering closes for a delivery date, as a local ISO timestamp. */
+export function cutoffMoment(deliveryDate: string, cutoff: string): string {
+  const closesOnDeliveryDay = cutoff < SAME_DAY_CUTOFF_BEFORE;
+  const date = closesOnDeliveryDay ? deliveryDate : addDays(deliveryDate, -1);
+  return `${date}T${cutoff}:00`;
 }
 
-/** The delivery date a new order lands on: today's cutoff hasn't passed -> tomorrow, else the day after. */
+/** True when an order for this delivery date arrives after ordering closed. */
+export function isLateFor(deliveryDate: string, nowIso: string, cutoff: string): boolean {
+  return nowIso > cutoffMoment(deliveryDate, cutoff);
+}
+
+/**
+ * The soonest delivery date an order placed now can still make.
+ *
+ * Today is a candidate: with a 03:00 cutoff, an order placed at 02:00 is still
+ * in time for that same day's delivery.
+ */
 export function nextDeliveryDate(today: string, nowIso: string, cutoff: string): string {
-  return addDays(today, isPastCutoff(nowIso, cutoff) ? 2 : 1);
+  for (let d = 0; d <= 3; d++) {
+    const date = addDays(today, d);
+    if (!isLateFor(date, nowIso, cutoff)) return date;
+  }
+  return addDays(today, 1);
 }
 
 export interface ConsolidationRow {
