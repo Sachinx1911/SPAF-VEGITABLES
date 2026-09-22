@@ -10,6 +10,7 @@ backend/.env.*
 !backend/.env.example
 backend/storage/*.key
 spaf-hostinger.zip
+backend-deploy.sh
 
 # local env
 .env.local
