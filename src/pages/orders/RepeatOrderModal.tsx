@@ -41,7 +41,7 @@ export function RepeatOrderModal({ open, onClose, previous, onApply }: RepeatOrd
       open={open}
       onClose={onClose}
       title="Repeat previous order"
-      description={`${previous.orderNo} · delivered ${fmtDate(previous.deliveryDate)} — this creates a new order, the original is unchanged.`}
+      description={`${previous.orderNo} · ${previous.deliveryStatus === 'Delivered' || previous.deliveryStatus === 'Partial' ? 'delivered' : 'for'} ${fmtDate(previous.deliveryDate)} — this creates a new order, the original is unchanged.`}
       size="lg"
       footer={
         <>
@@ -69,7 +69,7 @@ export function RepeatOrderModal({ open, onClose, previous, onApply }: RepeatOrd
             setSelected(next);
           }}
         />
-        <span className="text-xs text-muted">{previous.lines.length} items</span>
+        <span className="text-xs text-muted">{previous.lines.length} item{previous.lines.length === 1 ? '' : 's'}</span>
       </div>
       <div className="scrollbar-thin flex max-h-96 flex-col divide-y divide-line overflow-y-auto rounded-lg border border-line">
         {previous.lines.map((l) => {

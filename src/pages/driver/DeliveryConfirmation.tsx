@@ -48,7 +48,7 @@ export function DeliveryConfirmationPage() {
 
   const submit = async () => {
     if (mode !== 'Failed' && !receivedByName.trim()) return toast({ tone: 'error', title: "Enter who received the delivery" });
-    if (mode !== 'Failed' && !signature) return toast({ tone: 'error', title: 'Signature required' });
+    if ((mode === 'Full' || mode === 'Partial') && !signature) return toast({ tone: 'error', title: 'Signature required' });
     const ok = await confirm({
       title: `Confirm: ${MODES.find((m) => m.key === mode)!.label}`,
       description: customer.name,
@@ -119,8 +119,8 @@ export function DeliveryConfirmationPage() {
 
       {mode !== 'Failed' && (
         <>
-          <Input value={receivedByName} onChange={(e) => setReceivedByName(e.target.value)} placeholder="Customer / receiver name" />
-          <SignaturePad value={signature} onChange={setSignature} />
+          <Input value={receivedByName} onChange={(e) => setReceivedByName(e.target.value)} placeholder={mode === 'Refused' ? 'Who refused the delivery' : 'Customer / receiver name'} />
+          {mode !== 'Refused' && <SignaturePad value={signature} onChange={setSignature} />}
           <FileUpload label="Photo (optional)" value={photo} onChange={setPhoto} />
         </>
       )}

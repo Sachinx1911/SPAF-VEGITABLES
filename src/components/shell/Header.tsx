@@ -59,7 +59,7 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       <div className="ml-auto flex items-center gap-1.5">
-        <div className="mr-1 hidden items-center gap-1.5 text-[12.5px] text-muted lg:flex">
+        <div className="mr-1 hidden shrink-0 items-center gap-1.5 text-[12.5px] whitespace-nowrap text-muted xl:flex">
           <CalendarDays size={14} />
           {weekday(today)}, {fmtDate(today)}
         </div>
@@ -84,9 +84,9 @@ export function Header({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
               <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-700 text-[11px] font-semibold text-white">
                 {user ? initials(user.name) : '—'}
               </span>
-              <span className="hidden text-left sm:block">
-                <span className="block text-[12.5px] leading-tight font-medium text-ink">{user?.name}</span>
-                <span className="block text-[10.5px] leading-tight text-muted">{roleLabel}</span>
+              <span className="hidden max-w-[150px] text-left sm:block">
+                <span className="block truncate text-[12.5px] leading-tight font-medium text-ink">{user?.name}</span>
+                <span className="block truncate text-[10.5px] leading-tight text-muted">{roleLabel}</span>
               </span>
               <ChevronDown size={14} className={`hidden text-subtle transition-transform sm:block ${isOpen ? 'rotate-180' : ''}`} />
             </button>

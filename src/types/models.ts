@@ -124,6 +124,18 @@ export type DeliveryStatus = 'Pending' | 'Ready' | 'Dispatched' | 'In Transit' |
 export type OrderInvoiceStatus = 'Not Ready' | 'Ready' | 'Invoiced';
 export type OrderSource = 'Staff' | 'Customer Portal' | 'WhatsApp' | 'Phone';
 
+/**
+ * table: order_amendments — one row per time an order was changed after it was first sent.
+ * `from` null = line added, `to` null = line removed, both set = quantity changed.
+ */
+export interface OrderAmendment {
+  id: ID;
+  at: ISODateTime;
+  by: ID;
+  source: OrderSource;
+  lines: { itemId: ID; unit: Unit; from: number | null; to: number | null }[];
+}
+
 /** table: orders */
 export interface Order {
   id: ID;
@@ -146,6 +158,10 @@ export interface Order {
   remarks: string;
   createdBy: ID;
   createdAt: ISODateTime;
+  /** Every change made after the order was first sent, newest last. */
+  amendments?: OrderAmendment[];
+  /** When staff last acknowledged the customer's changes; older amendments are considered seen. */
+  changesReviewedAt?: ISODateTime | null;
 }
 
 /**
@@ -507,6 +523,21 @@ export interface DailySnapshot {
   salesValue: number;
 }
 
+/**
+ * Automation switches. Everything defaults to ON so the daily loop runs itself;
+ * each switch turns one hand-off back into a manual step.
+ */
+export interface AutomationSettings {
+  /** Regular, on-time orders are approved the moment they arrive. Late and Urgent orders still wait for a person. */
+  autoApproveOrders: boolean;
+  /** "Receive All" with Good condition records the quality check (Grade A) and credits stock immediately. */
+  autoAcceptGoodStock: boolean;
+  /** Accepted stock is split across customer orders as soon as it lands. */
+  autoAllocateOnReceive: boolean;
+  /** A delivered (or partially delivered) order is invoiced the moment the driver confirms. */
+  autoInvoiceOnDelivery: boolean;
+}
+
 /** table: settings (key/value in MySQL) */
 export interface Settings {
   companyName: string;
@@ -520,6 +551,7 @@ export interface Settings {
   defaultPaymentTermsDays: number;
   invoicePrefix: string;
   challanPrefix: string;
+  automation?: AutomationSettings;
 }
 
 export interface Database {

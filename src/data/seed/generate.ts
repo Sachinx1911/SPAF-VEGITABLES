@@ -855,6 +855,7 @@ export function generateSeed(): Database {
       defaultPaymentTermsDays: 15,
       invoicePrefix: 'SPAF/26-27/',
       challanPrefix: 'DC-',
+      automation: { autoApproveOrders: true, autoAcceptGoodStock: true, autoAllocateOnReceive: true, autoInvoiceOnDelivery: true },
     },
     routes, customers, items, prices, suppliers, orders, orderItems, locks, requirements, purchaseOrders, purchaseOrderItems,
     receivings, receivingItems, qualityChecks, allocations, packings, packingItems, challans, invoices, invoiceItems, payments,

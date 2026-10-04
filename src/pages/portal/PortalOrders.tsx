@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { CalendarDays, CheckCircle2, ChevronRight, Clock, ListFilter, Search, Truck, X } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Field';
@@ -34,7 +34,8 @@ function statusOf(o: Order): { label: string; tone: 'blue' | 'green' | 'amber' |
   if (o.deliveryStatus === 'Dispatched' || o.deliveryStatus === 'In Transit') return { label: 'Out for delivery', tone: 'blue' };
   if (o.packingStatus === 'Packed' || o.deliveryStatus === 'Ready') return { label: 'Packed', tone: 'blue' };
   if (o.status === 'Submitted' || o.status === 'Late') return { label: 'Awaiting approval', tone: 'amber' };
-  return { label: 'Preparing', tone: 'blue' };
+  if (o.status === 'Approved') return { label: 'Confirmed', tone: 'green' };
+  return { label: 'Being prepared', tone: 'blue' };
 }
 
 const TONE = {
@@ -48,10 +49,11 @@ export function PortalOrdersPage() {
   const db = useDb();
   const user = useCurrentUser()!;
   const nav = useNavigate();
+  const loc = useLocation();
   const today = todayISO();
 
   const [tab, setTab] = useState<TabKey>('all');
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(() => new URLSearchParams(loc.search).has('search'));
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -148,7 +150,8 @@ export function PortalOrdersPage() {
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-bold text-ink">Order #{o.orderNo}</p>
+                  <p className="text-[10.5px] font-semibold tracking-wide text-subtle uppercase">{o.orderType === 'Top-up' ? 'Top-up order' : o.orderType === 'Urgent' ? 'Urgent order' : 'Order'}</p>
+                  <p className="tabular text-[14px] leading-tight font-bold whitespace-nowrap text-ink">#{o.orderNo}</p>
                   <p className="tabular mt-0.5 text-[12.5px] text-muted">{lines.length} items · {inr(amount)}</p>
 
                   <div className="mt-2 flex items-center gap-1.5">
@@ -168,9 +171,9 @@ export function PortalOrdersPage() {
                   </div>
                 </div>
 
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  <span className={cn('flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-semibold', TONE[st.tone])}>
-                    {st.tone === 'green' ? <CheckCircle2 size={13} /> : <Truck size={13} />}
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <span className={cn('flex items-center gap-1 rounded-full px-2 py-1 text-[10.5px] font-semibold whitespace-nowrap', TONE[st.tone])}>
+                    {st.tone === 'green' ? <CheckCircle2 size={12} /> : <Truck size={12} />}
                     {st.label}
                   </span>
                   <ChevronRight size={18} className={cn('text-subtle transition-transform', open && 'rotate-90')} />
@@ -188,6 +191,12 @@ export function PortalOrdersPage() {
                     ? fmtTime(challan.deliveredAt)
                     : route ? `Expected from ${route.departureTime}` : 'Time to be confirmed'}
                 </span>
+                {!done && o.approvedAt && (
+                  <span className="flex items-center gap-1.5 text-emerald-700">
+                    <CheckCircle2 size={13} className="shrink-0" />
+                    Confirmed {fmtTime(o.approvedAt)}
+                  </span>
+                )}
                 {!open && (
                   <button onClick={() => setExpanded(o.id)} className="ml-auto rounded-lg border border-brand-300 px-3 py-1.5 text-[12.5px] font-semibold text-brand-800">
                     View Details

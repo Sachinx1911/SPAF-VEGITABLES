@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
+import { PackageCheck } from 'lucide-react';
 import { PageHeader, Card } from '../../components/ui/Card';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
+import { receiveAllPending } from '../../store/procurementActions';
 import { Button } from '../../components/ui/Button';
 import { StatusBadge } from '../../components/ui/Badge';
 import { DataTable, type Column } from '../../components/ui/DataTable';
-import { useDb } from '../../store/useStore';
+import { useCurrentUser, useDb } from '../../store/useStore';
 import { receivingQueue, type ReceivingQueueRow } from '../../domain/procurement';
 import { fmtDate, num } from '../../lib/format';
 import { ReceivingForm } from './ReceivingForm';
@@ -11,8 +15,23 @@ import type { PurchaseOrder } from '../../types/models';
 
 export function ReceivingPage() {
   const db = useDb();
+  const user = useCurrentUser()!;
+  const confirm = useConfirm();
+  const toast = useToast();
   const [receiving, setReceiving] = useState<PurchaseOrder | null>(null);
   const queue = useMemo(() => receivingQueue(db), [db]);
+
+  const receiveAll = async () => {
+    const ok = await confirm({
+      title: `Receive ${queue.length} purchase orders as ordered?`,
+      description: 'Every line is received in full in good condition, accepted to stock and allocated to customer orders. Use the Receive button on a single PO when something came short or damaged.',
+      confirmLabel: 'Receive all',
+      details: queue.map((r) => ({ label: r.po.poNo, value: `${r.supplierName} · ${r.lineCount} lines` })),
+    });
+    if (!ok) return;
+    const res = receiveAllPending(user.id);
+    toast({ tone: 'success', title: `${res.pos} purchase orders received`, description: `${res.autoAccepted} lines accepted to stock${res.autoAllocated ? ` · ${res.autoAllocated} items allocated to orders` : ''}` });
+  };
   const recentGrns = [...db.receivings].sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1)).slice(0, 15);
 
   const columns: Column<ReceivingQueueRow>[] = [
@@ -35,7 +54,11 @@ export function ReceivingPage() {
 
   return (
     <div>
-      <PageHeader title="Receiving" description={`${queue.length} purchase orders waiting for a GRN`} />
+      <PageHeader
+        title="Receiving"
+        description={`${queue.length} purchase orders waiting for a GRN`}
+        actions={queue.length > 0 && <Button variant="primary" icon={PackageCheck} onClick={receiveAll}>Receive all as ordered ({queue.length})</Button>}
+      />
       <Card className="mb-4">
         <DataTable
           columns={columns} rows={queue} rowKey={(r) => r.po.id} emptyTitle="Nothing to receive" emptyDescription="Every confirmed purchase has been received."

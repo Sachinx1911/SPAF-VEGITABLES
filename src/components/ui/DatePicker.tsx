@@ -1,6 +1,7 @@
 import { CalendarDays } from 'lucide-react';
 import { Input } from './Field';
 import { fmtDate } from '../../lib/format';
+import { cn } from '../../lib/cn';
 
 interface DatePickerProps {
   value: string; // ISO yyyy-mm-dd
@@ -26,6 +27,26 @@ export function DateRangePicker({ from, to, onChange }: { from: string; to: stri
       <Input type="date" value={from} onChange={(e) => onChange(e.target.value, to)} className="w-[152px]" />
       <span className="text-xs text-subtle">to</span>
       <Input type="date" value={to} min={from} onChange={(e) => onChange(from, e.target.value)} className="w-[152px]" />
+    </div>
+  );
+}
+
+interface DateFieldProps {
+  label?: string;
+  value: string;
+  onChange: (v: string) => void;
+  min?: string;
+  max?: string;
+  className?: string;
+  id?: string;
+}
+
+/** Labelled date control for filter bars and forms — one look everywhere a date is picked. */
+export function DateField({ label, value, onChange, min, max, className, id }: DateFieldProps) {
+  return (
+    <div className={cn('flex flex-col gap-1', className)}>
+      {label && <label htmlFor={id} className="text-[11.5px] font-medium text-muted">{label}</label>}
+      <Input id={id} type="date" value={value} min={min} max={max} onChange={(e) => onChange(e.target.value)} leading={<CalendarDays size={15} />} className="w-[172px] max-w-full" />
     </div>
   );
 }

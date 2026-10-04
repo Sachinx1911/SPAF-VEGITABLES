@@ -1,15 +1,13 @@
 import type { Invoice, InvoiceItem, Payment, PaymentMode } from '../types/models';
 import { useStore } from './useStore';
-import { uid } from '../lib/id';
+import { uid, nextDocNo } from '../lib/id';
 import { nowISO, todayISO } from '../lib/clock';
 import { addDays } from '../lib/format';
+import { ordersReadyToInvoice } from '../domain/finance';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, customerId: string | null, oldValue: string, newValue: string) {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId, oldValue, newValue, device: 'Chrome · Windows', status: 'Success' as const };
 }
-
-let invSeq = 2000;
-let rcptSeq = 500;
 
 /** Generates an invoice from an order's delivered/customer-accepted quantities — never re-typed. */
 export function generateInvoice(orderId: string, userId: string): Invoice {
@@ -20,7 +18,7 @@ export function generateInvoice(orderId: string, userId: string): Invoice {
   const itemById = new Map(db.items.map((i) => [i.id, i]));
 
   const invoice: Invoice = {
-    id: uid('inv'), invoiceNo: `${db.settings.invoicePrefix}${++invSeq}`, customerId: customer.id, orderId, challanId: db.challans.find((c) => c.orderId === orderId)?.id ?? null,
+    id: uid('inv'), invoiceNo: nextDocNo(db.invoices.map((i) => i.invoiceNo), db.settings.invoicePrefix, 0), customerId: customer.id, orderId, challanId: db.challans.find((c) => c.orderId === orderId)?.id ?? null,
     invoiceDate: todayISO(), dueDate: addDays(todayISO(), customer.paymentTermsDays), subtotal: 0, taxAmount: 0, total: 0, status: 'Generated', createdBy: userId, createdAt: nowISO(),
   };
   const items: InvoiceItem[] = lines.map((l) => {
@@ -43,13 +41,20 @@ export function generateInvoice(orderId: string, userId: string): Invoice {
   return invoice;
 }
 
+/** Invoices every delivered order that is still waiting. */
+export function generateAllInvoices(userId: string): number {
+  const list = ordersReadyToInvoice(useStore.getState().db);
+  for (const o of list) generateInvoice(o.id, userId);
+  return list.length;
+}
+
 export function recordPayment(
   input: { customerId: string; invoiceId: string; paymentDate: string; mode: PaymentMode; reference: string; amount: number; remarks: string },
   userId: string,
 ): Payment {
   const { db, commit } = useStore.getState();
   const invoice = db.invoices.find((i) => i.id === input.invoiceId);
-  const payment: Payment = { id: uid('pay'), receiptNo: `RCPT-${String(++rcptSeq).padStart(4, '0')}`, recordedBy: userId, recordedAt: nowISO(), ...input };
+  const payment: Payment = { id: uid('pay'), receiptNo: nextDocNo(db.payments.map((p) => p.receiptNo), 'RCPT-'), recordedBy: userId, recordedAt: nowISO(), ...input };
 
   commit((d) => {
     const paidTotal = d.payments.filter((p) => p.invoiceId === input.invoiceId).reduce((s, p) => s + p.amount, 0) + input.amount;

@@ -11,7 +11,7 @@ import { QuickAdd } from '../../components/shell/QuickAdd';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { todayISO, nowISO } from '../../lib/clock';
 import { addDays, fmtDate, fmtTime, inr, inrCompact, relativeTime } from '../../lib/format';
-import { liveStats, operationsTimeline, orderBoard, requirementRows, type StepState } from '../../domain/ops';
+import { liveStats, nextActions, operationsTimeline, orderBoard, requirementRows, type StepState } from '../../domain/ops';
 import { salesByCustomer } from '../../domain/reports';
 import { deriveNotifications } from '../../domain/notifications';
 import { cn } from '../../lib/cn';
@@ -68,6 +68,7 @@ export function DashboardPage() {
   const reqs = requirementRows(db, today);
   const notifications = deriveNotifications(db, today, now).slice(0, 6);
   const timeline = operationsTimeline(db, today);
+  const actions = nextActions(db, today);
   const custById = useMemo(() => new Map(db.customers.map((c) => [c.id, c])), [db.customers]);
   const itemById = useMemo(() => new Map(db.items.map((i) => [i.id, i])), [db.items]);
   const userById = useMemo(() => new Map(db.users.map((u) => [u.id, u])), [db.users]);
@@ -159,6 +160,33 @@ export function DashboardPage() {
             Fresh Produce<br />Stronger Partnerships
           </p>
           <QuickAdd />
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------- what's next */}
+      <div className="rounded-card border border-line bg-white px-4 py-3 shadow-card">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 flex items-center gap-2 text-[13px] font-semibold text-ink">
+            <span className="grid size-7 place-items-center rounded-lg bg-brand-50 text-brand-700"><Workflow size={15} /></span>
+            What's next
+          </span>
+          {actions.length === 0 ? (
+            <span className="flex items-center gap-1.5 text-[13px] text-emerald-700"><Check size={15} /> All caught up — nothing is waiting on you.</span>
+          ) : actions.map((a) => (
+            <button
+              key={a.key}
+              onClick={() => nav(a.link)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+                a.tone === 'red' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                : a.tone === 'orange' ? 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                : a.tone === 'blue' ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'border-brand-200 bg-brand-50 text-brand-800 hover:bg-brand-100',
+              )}
+            >
+              {a.label} <ChevronRight size={13} />
+            </button>
+          ))}
         </div>
       </div>
 

@@ -1,6 +1,16 @@
-import type { Database, DailySnapshot, Order, Unit } from '../types/models';
-import { addDays } from '../lib/format';
-import { outstandingSummary } from './finance';
+import type { AutomationSettings, Database, DailySnapshot, Order, Unit } from '../types/models';
+import { addDays, fmtDate } from '../lib/format';
+import { ordersReadyToInvoice, outstandingSummary } from './finance';
+import { packingBoard } from './packing';
+import { qcQueue, receivingQueue } from './procurement';
+import { hasUnreviewedChanges } from './orders';
+
+export const DEFAULT_AUTOMATION: AutomationSettings = {
+  autoApproveOrders: true, autoAcceptGoodStock: true, autoAllocateOnReceive: true, autoInvoiceOnDelivery: true,
+};
+
+/** Automation switches with defaults filled in — older saved databases have no `automation` block. */
+export const automationOf = (db: Database): AutomationSettings => ({ ...DEFAULT_AUTOMATION, ...(db.settings.automation ?? {}) });
 
 export type RequirementStatus = 'OK' | 'Purchase Required' | 'Critical';
 
@@ -60,6 +70,17 @@ export function requirementRows(db: Database, deliveryDate: string): Requirement
         status,
       };
     });
+}
+
+/**
+ * The delivery date the procurement screens should open on: tomorrow if it's already
+ * locked, else today if that is locked (the day being executed), else tomorrow.
+ */
+export function defaultProcurementDate(db: Database, today: string): string {
+  const tomorrow = addDays(today, 1);
+  if (db.locks.some((l) => l.deliveryDate === tomorrow)) return tomorrow;
+  if (db.locks.some((l) => l.deliveryDate === today)) return today;
+  return tomorrow;
 }
 
 export const isPendingApproval = (o: Order, today: string) =>
@@ -129,6 +150,63 @@ export function liveStats(db: Database, today: string): DailySnapshot {
     outstanding: Math.round(outstandingSummary(db, today).total),
     salesValue: db.invoices.filter((i) => i.invoiceDate === today).reduce((s, i) => s + i.total, 0),
   };
+}
+
+export interface NextAction {
+  key: string;
+  label: string;
+  count: number;
+  link: string;
+  tone: 'brand' | 'orange' | 'red' | 'blue';
+}
+
+/**
+ * The handful of things the operations team should press next, in workflow order.
+ * Powers the "What's next" strip on the dashboard so nobody has to hunt through modules.
+ */
+export function nextActions(db: Database, today: string): NextAction[] {
+  const out: NextAction[] = [];
+  const tomorrow = addDays(today, 1);
+
+  const changed = db.orders.filter((o) => o.deliveryDate >= today && o.status !== 'Rejected' && hasUnreviewedChanges(o)).length;
+  if (changed) out.push({ key: 'changed', label: `Review ${changed} changed order${changed > 1 ? 's' : ''}`, count: changed, link: '/orders?status=changed', tone: 'red' });
+  const late = db.orders.filter((o) => o.status === 'Late' && o.deliveryDate >= today).length;
+  if (late) out.push({ key: 'late', label: `Review ${late} late order${late > 1 ? 's' : ''}`, count: late, link: '/orders?status=Late', tone: 'red' });
+  const pending = db.orders.filter((o) => o.status === 'Submitted' && o.deliveryDate >= today).length;
+  if (pending) out.push({ key: 'approve', label: `Approve ${pending} order${pending > 1 ? 's' : ''}`, count: pending, link: '/orders?status=Submitted', tone: 'orange' });
+
+  for (const date of [today, tomorrow]) {
+    const locked = db.locks.some((l) => l.deliveryDate === date);
+    const approved = db.orders.filter((o) => o.deliveryDate === date && o.status === 'Approved').length;
+    if (!locked && approved) out.push({ key: `lock-${date}`, label: `Lock ${date === today ? "today's" : "tomorrow's"} ${approved} orders`, count: approved, link: '/consolidation', tone: 'brand' });
+    if (locked && approved) out.push({ key: `relock-${date}`, label: `Add ${approved} new order${approved > 1 ? 's' : ''} to ${fmtDate(date).slice(0, 5)} lock`, count: approved, link: '/consolidation', tone: 'orange' });
+    if (!locked) continue;
+    const reqs = requirementRows(db, date);
+    const toBuy = reqs.filter((r) => r.toPurchase > 0).length;
+    if (toBuy) out.push({ key: `buy-${date}`, label: `Buy ${toBuy} items for ${fmtDate(date).slice(0, 5)}`, count: toBuy, link: '/purchase', tone: 'orange' });
+  }
+
+  const toReceive = receivingQueue(db).length;
+  if (toReceive) out.push({ key: 'receive', label: `Receive ${toReceive} purchase order${toReceive > 1 ? 's' : ''}`, count: toReceive, link: '/receiving', tone: 'blue' });
+  const toGrade = qcQueue(db).length;
+  if (toGrade) out.push({ key: 'qc', label: `Grade ${toGrade} received line${toGrade > 1 ? 's' : ''}`, count: toGrade, link: '/quality-check', tone: 'blue' });
+
+  for (const date of [today, tomorrow]) {
+    if (!db.locks.some((l) => l.deliveryDate === date)) continue;
+    const orderIds = new Set(db.orders.filter((o) => o.deliveryDate === date && (o.status === 'Locked' || o.status === 'Approved')).map((o) => o.id));
+    const accepted = new Set(db.qualityChecks.map((q) => q.itemId));
+    const unallocated = db.orderItems.filter((l) => orderIds.has(l.orderId) && l.qty.approved != null && l.qty.allocated == null && accepted.has(l.itemId)).length;
+    if (unallocated) out.push({ key: `alloc-${date}`, label: `Allocate stock for ${fmtDate(date).slice(0, 5)}`, count: unallocated, link: `/allocation?date=${date}`, tone: 'blue' });
+    const toPack = packingBoard(db, date).filter((r) => r.status !== 'Packed').length;
+    if (toPack) out.push({ key: `pack-${date}`, label: `Pack ${toPack} order${toPack > 1 ? 's' : ''} for ${fmtDate(date).slice(0, 5)}`, count: toPack, link: `/packing?date=${date}`, tone: 'brand' });
+    const ready = db.challans.filter((c) => c.challanDate === date && c.status === 'Ready').length;
+    if (ready) out.push({ key: `dispatch-${date}`, label: `Dispatch ${ready} challan${ready > 1 ? 's' : ''} for ${fmtDate(date).slice(0, 5)}`, count: ready, link: `/delivery?date=${date}`, tone: 'brand' });
+  }
+
+  const toInvoice = ordersReadyToInvoice(db).length;
+  if (toInvoice) out.push({ key: 'invoice', label: `Invoice ${toInvoice} delivered order${toInvoice > 1 ? 's' : ''}`, count: toInvoice, link: '/invoices/new', tone: 'orange' });
+
+  return out;
 }
 
 export type StepState = 'done' | 'active' | 'pending' | 'attention';

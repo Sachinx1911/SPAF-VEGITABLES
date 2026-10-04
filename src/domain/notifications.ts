@@ -2,8 +2,10 @@ import type { Database } from '../types/models';
 import { addDays, fmtDate, inr, qty } from '../lib/format';
 import { invoiceViews } from './finance';
 import { requirementRows } from './ops';
+import { summarizeAmendment, unreviewedAmendments } from './orders';
 
 export type NotificationType =
+  | 'Order Changed'
   | 'Late Order'
   | 'Pending Approval'
   | 'Purchase Required'
@@ -32,6 +34,20 @@ export function deriveNotifications(db: Database, today: string, nowIso: string)
   const out: AppNotification[] = [];
   const cust = new Map(db.customers.map((c) => [c.id, c]));
   const item = new Map(db.items.map((i) => [i.id, i]));
+
+  for (const o of db.orders.filter((x) => x.deliveryDate >= today && x.status !== 'Rejected')) {
+    const pendingChanges = unreviewedAmendments(o);
+    if (!pendingChanges.length) continue;
+    const last = pendingChanges[pendingChanges.length - 1]!;
+    const sum = summarizeAmendment(last, item);
+    const bits = [sum.added && `${sum.added} added`, sum.removed && `${sum.removed} removed`, sum.changed && `${sum.changed} qty changed`].filter(Boolean).join(', ');
+    out.push({
+      id: `amend:${o.id}:${(o.amendments ?? []).length}`, type: 'Order Changed', priority: 'High',
+      title: `Order changed · ${cust.get(o.customerId)?.name}`,
+      message: `${o.orderNo} for ${fmtDate(o.deliveryDate)}${pendingChanges.length > 1 ? ` (${pendingChanges.length} changes)` : ''}: ${bits}. ${sum.text}`,
+      at: last.at, link: `/orders/${o.id}`,
+    });
+  }
 
   for (const o of db.orders.filter((x) => x.status === 'Late')) {
     out.push({

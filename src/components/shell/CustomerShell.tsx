@@ -1,8 +1,9 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { Bell, ClipboardList, Home, Receipt, ShoppingBasket, Sprout, UserRound } from 'lucide-react';
+import { Bell, ClipboardList, Home, Receipt, Search, ShoppingBasket, Sprout, UserRound } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { useCurrentUser, useDb } from '../../store/useStore';
-import { customerOutstanding } from '../../domain/finance';
+import { useCurrentUser, useDb, useUi } from '../../store/useStore';
+import { deriveCustomerNotifications } from '../../domain/customerNotifications';
 import { todayISO } from '../../lib/clock';
 
 const TABS = [
@@ -20,9 +21,13 @@ export function CustomerShell() {
   const nav = useNavigate();
   const loc = useLocation();
 
+  // A new screen always opens at the top — the browser otherwise keeps the previous page's scroll offset.
+  useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
+
   // The order screen carries its own back/title bar, so the brand header steps aside.
   const ownHeader = loc.pathname === '/portal/order';
-  const dues = user?.customerId ? customerOutstanding(db, todayISO()).get(user.customerId) ?? 0 : 0;
+  const readIds = useUi((s) => s.readNotificationIds);
+  const unread = user?.customerId ? deriveCustomerNotifications(db, user.customerId, todayISO()).filter((n) => !readIds.includes(n.id)).length : 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -32,17 +37,24 @@ export function CustomerShell() {
             <Sprout size={20} strokeWidth={2.2} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[17px] leading-tight font-bold tracking-tight text-brand-800">SPAF</p>
-            <p className="truncate text-[10.5px] leading-tight text-muted">Fresh Produce for a Better Tomorrow</p>
+            <p className="truncate text-[19px] leading-tight font-bold tracking-tight text-brand-800">SPAF</p>
+            <p className="truncate text-[11px] leading-tight text-muted">Freshness Delivered Daily</p>
           </div>
-          <button onClick={() => nav('/portal/account')} aria-label="Notifications" className="relative rounded-lg p-2 text-brand-800 hover:bg-canvas">
-            <Bell size={21} />
-            {dues > 0 && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-red-500 ring-2 ring-white" />}
+          <button onClick={() => nav('/portal/orders?search=1')} aria-label="Search orders" className="rounded-lg p-2 text-brand-800 hover:bg-canvas">
+            <Search size={22} strokeWidth={2.2} />
+          </button>
+          <button onClick={() => nav('/portal/notifications')} aria-label="Updates" className="relative rounded-lg p-2 text-brand-800 hover:bg-canvas">
+            <Bell size={22} strokeWidth={2.2} />
+            {unread > 0 && (
+              <span className="tabular absolute top-0.5 right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
           </button>
         </header>
       )}
 
-      <main className={cn('mx-auto w-full max-w-lg flex-1 pb-24', !ownHeader && 'px-4 pt-3')}>
+      <main className={cn('mx-auto w-full max-w-lg flex-1 pb-24', !ownHeader && 'px-4 pt-4')}>
         <Outlet />
       </main>
 

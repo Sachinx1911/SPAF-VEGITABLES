@@ -5,7 +5,7 @@ import {
 import { PageHeader, Card, CardHeader } from '../../components/ui/Card';
 import { useDb } from '../../store/useStore';
 import { salesByCustomer, salesByItem, deliveryReport } from '../../domain/reports';
-import { addDays, inr, inrCompact } from '../../lib/format';
+import { addDays, fmtDate, inr, inrCompact } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
 
 const GREEN = '#2f7f50';
@@ -14,6 +14,9 @@ const ORANGE = '#f97316';
 const RED = '#ef4444';
 const BLUE = '#3b82f6';
 const AXIS = { fontSize: 11, fill: '#8a968e' };
+/** Axis label: DD-MM, matching every other date in the product. Sorting still uses the ISO date. */
+const dayLabel = (iso: string) => fmtDate(iso).slice(0, 5);
+
 const tooltipStyle = { fontSize: 12, borderRadius: 8, border: '1px solid #e3e8e4', boxShadow: '0 4px 12px rgba(16,40,26,0.1)' };
 
 export function AnalyticsPage() {
@@ -22,23 +25,23 @@ export function AnalyticsPage() {
   const from = addDays(today, -29);
 
   const volumeData = useMemo(
-    () => db.snapshots.filter((s) => s.date >= from).map((s) => ({ date: s.date.slice(5), orders: s.ordersReceived })).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    () => db.snapshots.filter((s) => s.date >= from).sort((a, b) => (a.date < b.date ? -1 : 1)).map((s) => ({ date: dayLabel(s.date), orders: s.ordersReceived })),
     [db.snapshots, from],
   );
   const outstandingData = useMemo(
-    () => db.snapshots.filter((s) => s.date >= from).map((s) => ({ date: s.date.slice(5), outstanding: s.outstanding })).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    () => db.snapshots.filter((s) => s.date >= from).sort((a, b) => (a.date < b.date ? -1 : 1)).map((s) => ({ date: dayLabel(s.date), outstanding: s.outstanding })),
     [db.snapshots, from],
   );
   const salesVsPurchase = useMemo(
-    () => db.snapshots.filter((s) => s.date >= from).map((s) => ({ date: s.date.slice(5), sales: s.salesValue })).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    () => db.snapshots.filter((s) => s.date >= from).sort((a, b) => (a.date < b.date ? -1 : 1)).map((s) => ({ date: dayLabel(s.date), sales: s.salesValue })),
     [db.snapshots, from],
   );
   const topCustomers = useMemo(() => salesByCustomer(db, from, today).slice(0, 8).map((c) => ({ name: c.name.length > 16 ? c.name.slice(0, 15) + '…' : c.name, amount: c.amount })), [db, from, today]);
   const topItems = useMemo(() => salesByItem(db, from, today).slice(0, 8).map((i) => ({ name: `${i.name} (${i.unit})`.length > 20 ? i.name.slice(0, 16) + '… ' + `(${i.unit})` : `${i.name} (${i.unit})`, amount: i.amount })), [db, from, today]);
-  const delivery = useMemo(() => deliveryReport(db, from, today).map((d) => ({ date: d.date.slice(5), delivered: d.delivered, partial: d.partial, failed: d.failed })), [db, from, today]);
+  const delivery = useMemo(() => deliveryReport(db, from, today).map((d) => ({ date: dayLabel(d.date), delivered: d.delivered, partial: d.partial, failed: d.failed })), [db, from, today]);
   const fulfillment = useMemo(() => {
     const rows = deliveryReport(db, from, today);
-    return rows.map((d) => ({ date: d.date.slice(5), pct: d.onTimePct }));
+    return rows.map((d) => ({ date: dayLabel(d.date), pct: d.onTimePct }));
   }, [db, from, today]);
 
   const fulfilledOrders = db.orders.filter((o) => o.orderDate >= from && (o.status === 'Completed' || o.status === 'Partially Fulfilled')).length;

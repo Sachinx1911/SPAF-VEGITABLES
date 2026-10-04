@@ -52,7 +52,11 @@ export interface AllocationRow {
 }
 
 /** Per-item, per-customer allocation view for one delivery date, in route order. */
+/** Allocation only makes sense once the day is locked — before that there is no requirement and no stock to split. */
+export const isLockedDate = (db: Database, deliveryDate: string) => db.locks.some((l) => l.deliveryDate === deliveryDate);
+
 export function allocationRows(db: Database, deliveryDate: string, itemId?: string): AllocationRow[] {
+  if (!isLockedDate(db, deliveryDate)) return [];
   const orders = db.orders.filter((o) => o.deliveryDate === deliveryDate && (o.status === 'Locked' || o.status === 'Approved'));
   const orderById = new Map(orders.map((o) => [o.id, o]));
   const custById = new Map(db.customers.map((c) => [c.id, c]));

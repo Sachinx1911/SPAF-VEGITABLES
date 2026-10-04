@@ -57,7 +57,7 @@ function ReportsPage({ title, options }: { title: string; options: ReportOption[
         </div>
       </Card>
       <Card className="print-area">
-        <DataTable columns={columns} rows={rows} rowKey={(r: any, i?: number) => r.id ?? r.date ?? r.customerId ?? r.itemId ?? r.poNo ?? r.grnNo ?? String(i)} exportFilename={filename} pageSize={50} emptyTitle="No data for this range" />
+        <DataTable columns={columns} rows={rows} rowKey={(r: any) => r.id ?? r.grnNo ?? r.poNo ?? r.customerId ?? r.itemId ?? r.date} exportFilename={filename} pageSize={50} emptyTitle="No data for this range" />
       </Card>
     </div>
   );

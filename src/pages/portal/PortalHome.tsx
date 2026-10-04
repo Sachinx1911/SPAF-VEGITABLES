@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router';
 import { ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock, ListChecks, Truck, Wallet } from 'lucide-react';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { todayISO, nowISO } from '../../lib/clock';
-import { fmtDate, inr, parseISO, weekday } from '../../lib/format';
+import { fmtDate, fmtTime, inr, parseISO, weekday } from '../../lib/format';
 import { customerFavourites, editableOrder, isPastCutoff, nextDeliveryDate } from '../../domain/orders';
 import { customerOutstanding, invoiceViews } from '../../domain/finance';
 import { cn } from '../../lib/cn';
@@ -27,6 +27,11 @@ export function PortalHomePage() {
   const pastCutoff = isPastCutoff(now, cutoff);
   const deliveryDate = nextDeliveryDate(today, now, cutoff);
   const pending = editableOrder(db, customer.id, deliveryDate);
+  // Already locked for that date: the kitchen is working on it, so anything new is a top-up order.
+  const locked = db.orders.find((o) => o.customerId === customer.id && o.deliveryDate === deliveryDate && !!o.lockedAt && o.status !== 'Rejected') ?? null;
+  const lockedCount = locked ? db.orderItems.filter((l) => l.orderId === locked.id).length : 0;
+  const topUp = pending && pending.orderType === 'Top-up' ? pending : null;
+  const plural = (n: number) => `${n} item${n === 1 ? '' : 's'}`;
   const arrivingToday = db.orders.find((o) => o.customerId === customer.id && o.deliveryDate === today);
   const templates = db.standingTemplates.filter((t) => t.customerId === customer.id);
   const outstanding = customerOutstanding(db, today).get(customer.id) ?? 0;
@@ -34,7 +39,7 @@ export function PortalHomePage() {
 
   // What "place today's order" would start from, when nothing is in yet.
   const regularCount = customerFavourites(db, customer.id, deliveryDate).filter((f) => f.timesOrdered > 0).length;
-  const itemCount = pending ? pending.lines.length : regularCount;
+  const itemCount = locked ? lockedCount + (topUp?.lines.length ?? 0) : pending ? pending.lines.length : regularCount;
 
   const hour = new Date(now).getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -42,17 +47,17 @@ export function PortalHomePage() {
   return (
     <div className="-mx-4 -mt-3 flex flex-col bg-gradient-to-b from-fresh-50/70 via-white to-white">
       {/* -------------------------------------------------------------- hero */}
-      <div className="relative px-4 pt-4 pb-3">
-        <div className="relative z-10 max-w-[62%]">
+      <div className="relative px-4 pt-4 pb-2">
+        <div className="relative z-10 max-w-[60%]">
           <h1 className="text-[28px] leading-[1.12] font-bold tracking-[-0.02em] text-ink">
             {greeting},<br />{user.name.split(' ')[0]}!
           </h1>
           <p className="mt-2 text-[12.5px] text-muted">{longDate(today)}</p>
         </div>
 
-        <div className="pointer-events-none absolute top-1 right-0 w-[42%] text-center">
-          <p className="font-serif text-[15px] leading-[1.15] text-brand-700 italic">Fresh<br />Food<br />Daily</p>
-          <ProduceArt className="mt-1 h-24 w-full" fallbackClass="text-[22px]" />
+        <div className="pointer-events-none absolute top-2 right-0 flex w-[40%] items-center gap-1">
+          <p className="font-serif text-[14px] leading-[1.15] text-brand-700 italic">Fresh<br />Food<br />Daily</p>
+          <ProduceArt className="h-20 min-w-0 flex-1" fallbackClass="text-[22px]" />
         </div>
       </div>
 
@@ -66,26 +71,31 @@ export function PortalHomePage() {
             <div className="min-w-0 flex-1">
               <p className="text-[15.5px] font-semibold text-ink">Today's Order</p>
               <p className="truncate text-[12.5px] text-muted">
-                {itemCount} items{pending ? ` · ${pending.orderNo}` : ' · from your regular list'}
+                {plural(itemCount)}
+                {locked ? ` · ${locked.orderNo}${topUp ? ` + top-up ${topUp.orderNo}` : ''}` : pending ? ` · ${pending.orderNo}` : ' · from your regular list'}
               </p>
             </div>
-            <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold',
-              pending ? 'bg-emerald-50 text-emerald-700' : 'bg-fresh-50 text-brand-700')}>
-              {pending ? pending.status : 'Ready to order'}
+            <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap',
+              locked ? 'bg-blue-50 text-blue-700' : pending ? 'bg-emerald-50 text-emerald-700' : 'bg-fresh-50 text-brand-700')}>
+              {locked ? 'Being prepared' : pending ? (pending.status === 'Approved' ? 'Confirmed' : 'Received') : 'Ready to order'}
             </span>
           </div>
 
           <button
-            onClick={() => nav('/portal/order')}
+            onClick={() => nav(locked && !topUp ? '/portal/order?mode=new' : '/portal/order')}
             className="mt-3 flex w-full items-center gap-2 rounded-xl bg-brand-800 px-4 py-3.5 text-[15px] font-semibold text-white transition-transform active:scale-[0.99]"
           >
             <Check size={18} strokeWidth={2.8} />
-            <span className="flex-1 text-center">{pending ? 'Add / Edit Items' : "Place Today's Order"}</span>
+            <span className="flex-1 text-center">{topUp ? 'Edit top-up order' : locked ? 'Add a top-up order' : pending ? 'Add / Edit Items' : "Place Today's Order"}</span>
             <ArrowRight size={18} />
           </button>
 
           <p className="mt-2 text-center text-[11.5px] text-subtle">
-            Delivery {weekday(deliveryDate)}, {fmtDate(deliveryDate)} · order by {cutoff} {pastCutoff ? 'tomorrow' : 'today'}
+            {topUp
+              ? `Top-up ${topUp.orderNo} ${topUp.status === 'Approved' ? `confirmed ${fmtTime(topUp.approvedAt)}` : 'is awaiting confirmation'} · main order locked at ${fmtTime(locked!.lockedAt)}`
+              : locked
+                ? `Locked at ${fmtTime(locked.lockedAt)} · extra items go as a separate top-up order`
+                : `Delivery ${weekday(deliveryDate)}, ${fmtDate(deliveryDate)} · order by ${cutoff} ${pastCutoff ? 'tomorrow' : 'today'}`}
           </p>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ClipboardCheck } from 'lucide-react';
+import { CheckCheck, ClipboardCheck } from 'lucide-react';
 import { PageHeader, Card, CardBody } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Select, QtyInput, Textarea } from '../../components/ui/Field';
@@ -10,6 +10,7 @@ import { useCurrentUser, useDb } from '../../store/useStore';
 import { recordQualityCheck } from '../../store/procurementActions';
 import { qcQueue, type QcQueueRow } from '../../domain/procurement';
 import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { fmtDateTime, qty } from '../../lib/format';
 import type { QcGrade, QcReason } from '../../types/models';
 
@@ -20,6 +21,7 @@ export function QualityCheckPage() {
   const db = useDb();
   const user = useCurrentUser()!;
   const toast = useToast();
+  const confirm = useConfirm();
   const queue = useMemo(() => qcQueue(db), [db]);
   const [drafts, setDrafts] = useState<Record<string, { accepted: number; rejected: number; grade: QcGrade; reason: QcReason | ''; remarks: string; photo: { name: string; url: string } | null }>>({});
 
@@ -41,18 +43,44 @@ export function QualityCheckPage() {
     toast({ tone: 'success', title: 'Quality check saved', description: `${row.item.name} · Grade ${d.grade}` });
   };
 
+  /** Fast path for a clean delivery: every untouched line is accepted in full at Grade A. Lines you've edited keep your draft. */
+  const acceptAll = async () => {
+    const untouched = queue.filter((row) => !drafts[row.receivingItem.id]);
+    const ok = await confirm({
+      title: `Accept ${untouched.length} lines as Grade A?`,
+      description: untouched.length < queue.length ? `${queue.length - untouched.length} line(s) you have edited will be saved with your values.` : 'Every received line is accepted in full and credited to stock.',
+      confirmLabel: 'Accept all',
+      details: [{ label: 'Lines', value: queue.length }],
+    });
+    if (!ok) return;
+    for (const row of queue) {
+      const d = draftFor(row);
+      if (d.accepted + d.rejected > row.receivingItem.receivedQty + 0.001) continue;
+      recordQualityCheck(
+        { receivingItemId: row.receivingItem.id, itemId: row.item.id, unit: row.item.unit, acceptedQty: d.accepted, rejectedQty: d.rejected, grade: d.grade, reason: d.rejected > 0 ? (d.reason || 'Other') : null, remarks: d.remarks },
+        user.id,
+      );
+    }
+    setDrafts({});
+    toast({ tone: 'success', title: 'Quality checks saved', description: `${queue.length} lines · stock updated` });
+  };
+
   if (queue.length === 0) {
     return (
       <div>
         <PageHeader title="Quality Check" />
-        <Card><EmptyState icon={ClipboardCheck} title="No pending quality checks" description="Every received line has been graded." /></Card>
+        <Card><EmptyState icon={ClipboardCheck} title="No pending quality checks" description="Good-condition stock is accepted automatically on receipt. Only lines received as Average or Damaged wait here." /></Card>
       </div>
     );
   }
 
   return (
     <div>
-      <PageHeader title="Quality Check" description={`${queue.length} received lines waiting for grading`} />
+      <PageHeader
+        title="Quality Check"
+        description={`${queue.length} lines received in doubtful condition — decide what to accept; accepted quantities are credited to stock.`}
+        actions={<Button variant="primary" icon={CheckCheck} onClick={acceptAll}>Accept all as Grade A</Button>}
+      />
       <div className="flex flex-col gap-3">
         {queue.map((row) => {
           const d = draftFor(row);

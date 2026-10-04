@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import {
-  ArrowDown, ArrowUp, Check, CheckCircle2, ChevronDown, ClipboardList, Clock, Eye, FileUp, Filter, MoreHorizontal,
+  ArrowDown, ArrowUp, Check, CheckCheck, CheckCircle2, ChevronDown, ClipboardList, Clock, Eye, Filter, MoreHorizontal,
   Pencil, Plus, Printer, Repeat, SlidersHorizontal, XCircle,
 } from 'lucide-react';
 import { Button, IconButton } from '../../components/ui/Button';
@@ -14,10 +14,11 @@ import { Menu } from '../../components/ui/Dropdown';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { approveOrder } from '../../store/orderActions';
+import { approveOrder, approvePendingOrders } from '../../store/orderActions';
 import { can } from '../../lib/nav';
 import type { Order } from '../../types/models';
 import { addDays, fmtDate, fmtTime, inr } from '../../lib/format';
+import { hasUnreviewedChanges } from '../../domain/orders';
 import { todayISO } from '../../lib/clock';
 import { cn } from '../../lib/cn';
 import { RejectOrderModal } from './RejectOrderModal';
@@ -25,6 +26,7 @@ import { downloadCsv } from './orderUi';
 
 const TABS = [
   { key: 'all', label: 'All Orders', tone: '' },
+  { key: 'changed', label: 'Changed by Customer', tone: 'bg-red-500' },
   { key: 'pending', label: 'Pending Approval', tone: 'bg-orange-500' },
   { key: 'approved', label: 'Approved', tone: 'bg-emerald-500' },
   { key: 'late', label: 'Late Orders', tone: 'bg-amber-500' },
@@ -36,6 +38,7 @@ type TabKey = (typeof TABS)[number]['key'];
 
 const MATCHES: Record<TabKey, (o: Order) => boolean> = {
   all: () => true,
+  changed: (o) => o.status !== 'Rejected' && hasUnreviewedChanges(o),
   pending: (o) => o.status === 'Submitted',
   approved: (o) => o.status === 'Approved' || o.status === 'Locked' || o.status === 'Completed' || o.status === 'Partially Fulfilled',
   late: (o) => o.status === 'Late',
@@ -56,7 +59,7 @@ export function OrdersListPage() {
   const initialStatus = new URLSearchParams(loc.search).get('status') ?? '';
   const [tab, setTab] = useState<TabKey>(() => {
     const t = TABS.find((x) => x.label.toLowerCase().startsWith(initialStatus.toLowerCase()));
-    return initialStatus === 'Submitted' ? 'pending' : initialStatus === 'Late' ? 'late' : t?.key ?? 'all';
+    return initialStatus === 'Submitted' ? 'pending' : initialStatus === 'Late' ? 'late' : initialStatus === 'changed' ? 'changed' : t?.key ?? 'all';
   });
   const [search, setSearch] = useState('');
   const [from, setFrom] = useState(addDays(today, -1));
@@ -142,6 +145,18 @@ export function OrdersListPage() {
     toast({ tone: 'success', title: `${list.length} orders approved` });
   };
 
+  const pendingAll = db.orders.filter((o) => o.status === 'Submitted' && o.deliveryDate >= today).length;
+  const approveAllPending = async () => {
+    const ok = await confirm({
+      title: `Approve all ${pendingAll} pending orders?`,
+      description: 'Every regular order waiting for approval is approved at its ordered quantities. Late orders stay in the Late tab for review.',
+      confirmLabel: 'Approve all',
+    });
+    if (!ok) return;
+    const n = approvePendingOrders(user.id);
+    toast({ tone: 'success', title: `${n} orders approved` });
+  };
+
   const exportCsv = () =>
     downloadCsv(
       'orders',
@@ -190,10 +205,8 @@ export function OrdersListPage() {
           <p className="mt-0.5 text-[13px] text-muted">Manage customer orders, approvals and delivery planning.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canApprove && pendingAll > 0 && <Button variant="accent" icon={CheckCheck} onClick={approveAllPending}>Approve all pending ({pendingAll})</Button>}
           <Button variant="primary" icon={Plus} onClick={() => nav('/orders/new')}>New Order</Button>
-          <Button variant="secondary" icon={FileUp} onClick={() => toast({ tone: 'info', title: 'Bulk import is not wired up yet', description: 'Use New Order, or export the current list to CSV.' })}>
-            Import Orders
-          </Button>
           <Menu
             align="right"
             items={[
@@ -295,7 +308,14 @@ export function OrdersListPage() {
                         aria-label={`Select ${o.orderNo}`}
                       />
                     </td>
-                    <td className="px-3 py-2.5 font-medium whitespace-nowrap text-brand-700">{o.orderNo}</td>
+                    <td className="px-3 py-2.5 font-medium whitespace-nowrap text-brand-700">
+                      {o.orderNo}
+                      {hasUnreviewedChanges(o) && (
+                        <span className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-red-700 uppercase ring-1 ring-red-200/70" title="Changed by customer after sending">
+                          Changed
+                        </span>
+                      )}
+                    </td>
                     <td className="max-w-[12rem] truncate px-3 py-2.5 text-ink">{custById.get(o.customerId)?.name ?? '—'}</td>
                     <td className="tabular px-3 py-2.5 whitespace-nowrap text-muted">{fmtDate(o.orderDate)}</td>
                     <td className="tabular px-3 py-2.5 whitespace-nowrap text-muted">{fmtDate(o.deliveryDate)}</td>

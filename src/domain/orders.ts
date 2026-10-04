@@ -1,5 +1,33 @@
-import type { Customer, Database, Item, Order, OrderItem, Unit } from '../types/models';
-import { addDays } from '../lib/format';
+import type { Customer, Database, Item, Order, OrderAmendment, OrderItem, Unit } from '../types/models';
+import { addDays, qty as fmtQty } from '../lib/format';
+
+/** Changes the customer made that nobody on the team has looked at yet. */
+export function unreviewedAmendments(o: Order): OrderAmendment[] {
+  const seen = o.changesReviewedAt ?? '';
+  return (o.amendments ?? []).filter((a) => a.at > seen);
+}
+
+export const hasUnreviewedChanges = (o: Order) => unreviewedAmendments(o).length > 0;
+
+export interface AmendmentSummary {
+  added: number;
+  removed: number;
+  changed: number;
+  /** "Added: Cauliflower 2 Kg · Removed: Onion 5 Kg · Tomato 10 → 12 Kg" */
+  text: string;
+}
+
+export function summarizeAmendment(a: OrderAmendment, itemById: Map<string, Item>): AmendmentSummary {
+  const name = (id: string) => itemById.get(id)?.name ?? id;
+  const added = a.lines.filter((l) => l.from == null && l.to != null);
+  const removed = a.lines.filter((l) => l.to == null && l.from != null);
+  const changed = a.lines.filter((l) => l.from != null && l.to != null);
+  const parts: string[] = [];
+  if (added.length) parts.push(`Added: ${added.map((l) => `${name(l.itemId)} ${fmtQty(l.to, l.unit)}`).join(', ')}`);
+  if (removed.length) parts.push(`Removed: ${removed.map((l) => `${name(l.itemId)} ${fmtQty(l.from, l.unit)}`).join(', ')}`);
+  if (changed.length) parts.push(changed.map((l) => `${name(l.itemId)} ${fmtQty(l.from, l.unit)} → ${fmtQty(l.to, l.unit)}`).join(', '));
+  return { added: added.length, removed: removed.length, changed: changed.length, text: parts.join(' · ') };
+}
 
 export interface FavouriteLine {
   item: Item;
@@ -50,10 +78,14 @@ export function customerFavourites(db: Database, customerId: string, asOfDate: s
 
 /** The customer's most recent non-draft, non-rejected order — what "Repeat Previous Order" repeats. */
 export function previousOrder(db: Database, customerId: string): (Order & { lines: OrderItem[] }) | null {
-  const orders = db.orders
+  const candidates = db.orders
     .filter((o) => o.customerId === customerId && o.status !== 'Draft' && o.status !== 'Rejected')
-    .sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1));
-  const order = orders[0];
+    .sort((a, b) => (a.deliveryDate < b.deliveryDate ? 1 : a.deliveryDate > b.deliveryDate ? -1 : a.receivedAt < b.receivedAt ? 1 : -1));
+  const delivered = (o: Order) => o.deliveryStatus === 'Delivered' || o.deliveryStatus === 'Partial';
+  // Prefer the last full order that was actually delivered; a one-line top-up is not what anyone wants to repeat.
+  const order = candidates.find((o) => o.orderType !== 'Top-up' && delivered(o))
+    ?? candidates.find((o) => o.orderType !== 'Top-up')
+    ?? candidates[0];
   if (!order) return null;
   return { ...order, lines: db.orderItems.filter((l) => l.orderId === order.id) };
 }

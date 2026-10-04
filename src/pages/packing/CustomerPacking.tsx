@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Check, PackageCheck, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, PackageCheck, TriangleAlert } from 'lucide-react';
 import { Card, CardBody, CardHeader, PageHeader } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Select, QtyInput, Checkbox, Textarea } from '../../components/ui/Field';
+import { Select, QtyInput, Textarea } from '../../components/ui/Field';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { Breadcrumb } from '../../components/ui/Breadcrumb';
 import { Modal } from '../../components/ui/Overlay';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { getOrCreatePacking, markPacked, raisePackingIssue, setPackageType, setPackedQty } from '../../store/packingActions';
+import { getOrCreatePacking, markPacked, packAllAsAllocated, raisePackingIssue, setPackageType, setPackedQty } from '../../store/packingActions';
 import { fmtDate, qty } from '../../lib/format';
 import type { PackageType } from '../../types/models';
 
@@ -25,7 +25,6 @@ export function CustomerPackingPage() {
   const toast = useToast();
   const [issueOpen, setIssueOpen] = useState(false);
   const [issueText, setIssueText] = useState('');
-  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     if (orderId && !db.packings.some((p) => p.orderId === orderId)) getOrCreatePacking(orderId, user.id);
@@ -41,25 +40,26 @@ export function CustomerPackingPage() {
   if (!order || !customer || !packing) return null;
 
   const allPacked = items.every((i) => (i.packedQty ?? 0) >= i.allocatedQty);
+  const blankLines = items.filter((i) => i.packedQty == null).length;
   const isDone = packing.status === 'Packed';
 
   const finish = async () => {
     if (!allPacked && !(await confirm({ title: 'Some items are not fully packed', description: 'Mark packed anyway? Balance quantities will be recorded as short.', tone: 'danger', confirmLabel: 'Mark packed anyway' }))) return;
-    if (allPacked && !(await confirm({ title: 'Mark this order packed?', description: 'This generates the delivery challan automatically.', confirmLabel: 'Mark Packed' }))) return;
+    if (allPacked && !(await confirm({ title: 'Mark this order packed?', description: 'Confirms the items match the order and are correctly packaged. The delivery challan is generated automatically.', confirmLabel: 'Mark Packed' }))) return;
     const challan = markPacked(packing.id, user.id);
     toast({ tone: 'success', title: 'Packed & challan generated', description: challan.challanNo });
-    nav('/packing');
+    nav(`/packing?date=${order.deliveryDate}`);
   };
 
   return (
     <div>
       <PageHeader
-        breadcrumb={<Breadcrumb items={[{ label: 'Packing', to: '/packing' }, { label: order.orderNo }]} />}
+        breadcrumb={<Breadcrumb items={[{ label: 'Packing', to: `/packing?date=${order.deliveryDate}` }, { label: order.orderNo }]} />}
         title={<span className="flex items-center gap-2">{customer.name} <StatusBadge status={packing.status === 'Packing' ? 'Packing' : packing.status} /></span>}
         description={`${order.orderNo} · ${route?.name ?? '—'} · Delivery ${fmtDate(order.deliveryDate)}`}
         actions={
           <>
-            <Button variant="secondary" icon={ArrowLeft} onClick={() => nav('/packing')}>Back</Button>
+            <Button variant="secondary" icon={ArrowLeft} onClick={() => nav(`/packing?date=${order.deliveryDate}`)}>Back</Button>
             {!isDone && <Button variant="danger" icon={TriangleAlert} onClick={() => setIssueOpen(true)}>Raise Issue</Button>}
             {!isDone && <Button variant="primary" icon={Check} onClick={finish}>Mark Packed</Button>}
           </>
@@ -74,7 +74,15 @@ export function CustomerPackingPage() {
       )}
 
       <Card>
-        <CardHeader title="Items to pack" icon={<PackageCheck size={15} />} subtitle={`${items.filter((i) => (i.packedQty ?? 0) >= i.allocatedQty).length}/${items.length} complete`} />
+        <CardHeader
+          title="Items to pack" icon={<PackageCheck size={15} />}
+          subtitle={`${items.filter((i) => (i.packedQty ?? 0) >= i.allocatedQty).length}/${items.length} complete · ${packing.packingNo}`}
+          actions={!isDone && blankLines > 0 && (
+            <Button size="sm" variant="subtle" icon={CheckCheck} onClick={() => { packAllAsAllocated(packing.id, user.id); toast({ tone: 'success', title: `${blankLines} lines packed as allocated` }); }}>
+              Pack all as allocated
+            </Button>
+          )}
+        />
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full border-collapse text-[13px]">
             <thead>
@@ -103,11 +111,6 @@ export function CustomerPackingPage() {
             </tbody>
           </table>
         </div>
-        {!isDone && (
-          <div className="border-t border-line p-4">
-            <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)} label="Packing checklist verified — items match order, quality checked, correctly packaged" />
-          </div>
-        )}
       </Card>
 
       <Modal open={issueOpen} onClose={() => setIssueOpen(false)} title="Raise packing issue" footer={<><Button variant="secondary" onClick={() => setIssueOpen(false)}>Cancel</Button><Button variant="danger" onClick={() => { if (!issueText.trim()) return; raisePackingIssue(packing.id, issueText, user.id); toast({ tone: 'warning', title: 'Issue raised' }); setIssueOpen(false); }}>Raise issue</Button></>}>

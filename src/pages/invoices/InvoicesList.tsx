@@ -7,7 +7,8 @@ import { Select } from '../../components/ui/Field';
 import { StatusBadge } from '../../components/ui/Badge';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { EmptyState } from '../../components/ui/States';
-import { useDb } from '../../store/useStore';
+import { useCurrentUser, useDb } from '../../store/useStore';
+import { can } from '../../lib/nav';
 import { invoiceViews, type InvoiceView } from '../../domain/finance';
 import { fmtDate, inr } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
@@ -16,8 +17,10 @@ const STATUSES = ['Draft', 'Generated', 'Sent', 'Partially Paid', 'Paid', 'Overd
 
 export function InvoicesListPage() {
   const db = useDb();
+  const user = useCurrentUser()!;
   const nav = useNavigate();
   const today = todayISO();
+  const canCreate = can(db, user.role, 'invoices', 'create');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [customerId, setCustomerId] = useState('');
@@ -34,14 +37,14 @@ export function InvoicesListPage() {
   }).sort((a, b) => (a.invoiceDate < b.invoiceDate ? 1 : -1));
 
   const columns: Column<InvoiceView>[] = [
-    { key: 'no', header: 'Invoice No', render: (i) => <span className="font-medium text-brand-700">{i.invoiceNo}</span>, sortValue: (i) => i.invoiceNo, exportValue: (i) => i.invoiceNo },
+    { key: 'no', header: 'Invoice No', nowrap: true, render: (i) => <span className="font-medium text-brand-700">{i.invoiceNo}</span>, sortValue: (i) => i.invoiceNo, exportValue: (i) => i.invoiceNo },
     { key: 'customer', header: 'Customer', render: (i) => custById.get(i.customerId)?.name ?? '—', sortValue: (i) => custById.get(i.customerId)?.name ?? '' },
-    { key: 'date', header: 'Invoice Date', render: (i) => fmtDate(i.invoiceDate), sortValue: (i) => i.invoiceDate },
-    { key: 'due', header: 'Due Date', render: (i) => fmtDate(i.dueDate), hideBelow: 'md' },
-    { key: 'order', header: 'Order', render: (i) => db.orders.find((o) => o.id === i.orderId)?.orderNo ?? '—', hideBelow: 'lg' },
-    { key: 'amount', header: 'Amount', align: 'right', render: (i) => <span className="tabular">{inr(i.total)}</span>, sortValue: (i) => i.total },
+    { key: 'date', header: 'Invoice Date', nowrap: true, render: (i) => fmtDate(i.invoiceDate), sortValue: (i) => i.invoiceDate, exportValue: (i) => i.invoiceDate },
+    { key: 'due', header: 'Due Date', nowrap: true, render: (i) => fmtDate(i.dueDate), hideBelow: 'md', exportValue: (i) => i.dueDate },
+    { key: 'order', header: 'Order', nowrap: true, render: (i) => db.orders.find((o) => o.id === i.orderId)?.orderNo ?? '—', hideBelow: 'lg' },
+    { key: 'amount', header: 'Amount', align: 'right', nowrap: true, exportValue: (i) => i.total, render: (i) => <span className="tabular">{inr(i.total)}</span>, sortValue: (i) => i.total },
     { key: 'paid', header: 'Paid', align: 'right', render: (i) => <span className="tabular text-muted">{inr(i.paid)}</span>, hideBelow: 'md' },
-    { key: 'balance', header: 'Balance', align: 'right', render: (i) => (i.balance ? <span className="tabular font-medium text-orange-600">{inr(i.balance)}</span> : '—'), sortValue: (i) => i.balance },
+    { key: 'balance', header: 'Balance', align: 'right', nowrap: true, exportValue: (i) => i.balance, render: (i) => (i.balance ? <span className="tabular font-medium text-orange-600">{inr(i.balance)}</span> : '—'), sortValue: (i) => i.balance },
     { key: 'status', header: 'Status', render: (i) => <StatusBadge status={i.derivedStatus} /> },
   ];
 
@@ -50,11 +53,11 @@ export function InvoicesListPage() {
       <PageHeader
         title="Invoices"
         description={`${rows.length} of ${db.invoices.length} invoices`}
-        actions={<Button variant="primary" icon={Plus} onClick={() => nav('/invoices/new')}>Create Invoice</Button>}
+        actions={canCreate && <Button variant="primary" icon={Plus} onClick={() => nav('/invoices/new')}>Create Invoice</Button>}
       />
       <Card>
         {rows.length === 0 && !search && !status && !customerId ? (
-          <EmptyState icon={FileText} title="No invoices yet" description="Invoices generate from delivered orders." action={<Button size="sm" variant="primary" icon={Plus} onClick={() => nav('/invoices/new')} className="mt-1">Create Invoice</Button>} />
+          <EmptyState icon={FileText} title="No invoices yet" description="Invoices generate from delivered orders." action={canCreate && <Button size="sm" variant="primary" icon={Plus} onClick={() => nav('/invoices/new')} className="mt-1">Create Invoice</Button>} />
         ) : (
           <DataTable
             columns={columns}

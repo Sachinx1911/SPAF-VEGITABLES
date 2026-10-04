@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { ArrowLeft, Plus, Trash, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ListChecks, Plus, Trash, TriangleAlert } from 'lucide-react';
 import { PageHeader, Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { Button, IconButton } from '../../components/ui/Button';
-import { Select, PriceInput, QtyInput } from '../../components/ui/Field';
+import { Select, PriceInput, QtyInput, Input } from '../../components/ui/Field';
+import { DateField } from '../../components/ui/DatePicker';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { createPurchaseOrder } from '../../store/procurementActions';
-import { requirementRows } from '../../domain/ops';
-import { addDays, inr, qty } from '../../lib/format';
+import { defaultProcurementDate, requirementRows } from '../../domain/ops';
+import { fmtDate, inr, qty } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
 
 interface Line {
@@ -29,18 +30,35 @@ export function PurchaseEntryPage() {
   const today = todayISO();
 
   const [supplierId, setSupplierId] = useState('');
-  const [forDeliveryDate, setForDeliveryDate] = useState(() => new URLSearchParams(loc.search).get('date') ?? addDays(today, 1));
+  const [forDeliveryDate, setForDeliveryDate] = useState(() => new URLSearchParams(loc.search).get('date') ?? defaultProcurementDate(db, today));
   const [invoiceNo, setInvoiceNo] = useState('');
   const [lines, setLines] = useState<Line[]>([{ itemId: '', qty: null, rate: null, remarks: '' }]);
 
   const reqs = useMemo(() => requirementRows(db, forDeliveryDate), [db, forDeliveryDate]);
   const reqByItem = new Map(reqs.map((r) => [r.itemId, r]));
   const itemById = new Map(db.items.map((i) => [i.id, i]));
-  const items = db.items.filter((i) => i.active && (!supplierId || true));
+  // Items still to buy for this date come first in every item picker, then the rest of the catalogue.
+  const items = [...db.items.filter((i) => i.active)].sort((a, b) => {
+    const ra = reqByItem.get(a.id)?.toPurchase ?? 0;
+    const rb = reqByItem.get(b.id)?.toPurchase ?? 0;
+    return (rb > 0 ? 1 : 0) - (ra > 0 ? 1 : 0) || a.sortOrder - b.sortOrder;
+  });
+  const stillToBuy = reqs.filter((r) => r.toPurchase > 0);
 
   const setLine = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   const addLine = () => setLines((ls) => [...ls, { itemId: '', qty: null, rate: null, remarks: '' }]);
   const removeLine = (i: number) => setLines((ls) => ls.filter((_, idx) => idx !== i));
+
+  /** Pre-fills one line per item that is still short for the delivery date, at the default purchase price. */
+  const loadRequirement = () => {
+    if (!stillToBuy.length) return toast({ tone: 'info', title: 'Nothing left to buy', description: `Every item for ${fmtDate(forDeliveryDate)} is already purchased.` });
+    const chosen = new Set(lines.map((l) => l.itemId).filter(Boolean));
+    const fresh: Line[] = stillToBuy
+      .filter((r) => !chosen.has(r.itemId))
+      .map((r) => ({ itemId: r.itemId, qty: r.toPurchase, rate: itemById.get(r.itemId)?.defaultPurchasePrice ?? null, remarks: '' }));
+    setLines((ls) => [...ls.filter((l) => l.itemId), ...fresh]);
+    toast({ tone: 'success', title: `${fresh.length} items loaded`, description: 'Quantities match the outstanding requirement — adjust before confirming.' });
+  };
 
   const subtotal = lines.reduce((s, l) => s + (l.qty ?? 0) * (l.rate ?? 0), 0);
   const taxAmount = lines.reduce((s, l) => {
@@ -59,7 +77,7 @@ export function PurchaseEntryPage() {
     });
     const ok = await confirm({
       title: 'Confirm this purchase?',
-      description: overs.length ? `${overs.length} item(s) exceed what's still required for ${forDeliveryDate} — double-check before confirming.` : undefined,
+      description: overs.length ? `${overs.length} item(s) exceed what's still required for ${fmtDate(forDeliveryDate)} — double-check before confirming.` : undefined,
       confirmLabel: 'Confirm purchase',
       tone: overs.length ? 'danger' : 'default',
       details: [{ label: 'Items', value: validLines.length }, { label: 'Total', value: inr(subtotal + taxAmount) }],
@@ -88,17 +106,26 @@ export function PurchaseEntryPage() {
           </div>
           <div>
             <label className="mb-1.5 block text-[12.5px] font-medium text-ink">For delivery date</label>
-            <input type="date" value={forDeliveryDate} onChange={(e) => setForDeliveryDate(e.target.value)} className="h-9 w-full rounded-lg border border-line px-3 text-[13px]" />
+            <DateField value={forDeliveryDate} onChange={setForDeliveryDate} className="[&_div]:w-full" />
           </div>
           <div>
             <label className="mb-1.5 block text-[12.5px] font-medium text-ink">Supplier invoice no.</label>
-            <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="Optional" className="h-9 w-full rounded-lg border border-line px-3 text-[13px]" />
+            <Input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="Optional" />
           </div>
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title="Items" actions={<Button size="sm" variant="secondary" icon={Plus} onClick={addLine}>Add line</Button>} />
+        <CardHeader
+          title="Items"
+          subtitle={stillToBuy.length ? `${stillToBuy.length} items still to buy for ${fmtDate(forDeliveryDate)}` : `Nothing outstanding for ${fmtDate(forDeliveryDate)}`}
+          actions={
+            <>
+              <Button size="sm" variant="subtle" icon={ListChecks} onClick={loadRequirement} disabled={!stillToBuy.length}>Load requirement</Button>
+              <Button size="sm" variant="secondary" icon={Plus} onClick={addLine}>Add line</Button>
+            </>
+          }
+        />
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full border-collapse text-[13px]">
             <thead>
@@ -127,7 +154,7 @@ export function PurchaseEntryPage() {
                     <td className="px-3 py-2"><PriceInput value={l.rate} onChange={(v) => setLine(i, { rate: v })} /></td>
                     <td className="px-3 py-2 text-right tabular font-medium">{l.qty && l.rate ? inr(l.qty * l.rate) : '—'}</td>
                     <td className="px-3 py-2">
-                      <input value={l.remarks} onChange={(e) => setLine(i, { remarks: e.target.value })} placeholder="Optional" className="h-8 w-full rounded-md border border-line px-2 text-[12.5px]" />
+                      <Input value={l.remarks} onChange={(e) => setLine(i, { remarks: e.target.value })} placeholder="Optional" className="h-8 min-w-40 text-[12.5px]" />
                       {over && <p className="mt-1 flex items-center gap-1 text-[11px] text-red-600"><TriangleAlert size={11} /> Exceeds requirement</p>}
                     </td>
                     <td className="px-2 py-2 text-center">

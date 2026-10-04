@@ -31,11 +31,11 @@ export function Badge({ tone = 'neutral', dot, children, className }: { tone?: T
 /** One place that decides the colour of every workflow status in the product. */
 const STATUS_TONE: Record<string, Tone> = {
   // orders
-  Draft: 'neutral', Pending: 'neutral', Submitted: 'blue', Approved: 'green', Late: 'orange', Rejected: 'red',
+  Draft: 'neutral', Pending: 'neutral', Submitted: 'blue', 'Order Changed': 'red', 'Late Order': 'orange', Approved: 'green', Late: 'orange', Rejected: 'red',
   Locked: 'violet', 'Partially Fulfilled': 'orange', Completed: 'green',
   // procurement
   OK: 'green', 'Purchase Required': 'orange', Critical: 'red', Shortage: 'red', Excess: 'amber', Available: 'green',
-  Partial: 'orange', Received: 'green', Confirmed: 'blue', 'Partially Received': 'orange',
+  Partial: 'orange', Received: 'green', Confirmed: 'blue', 'Partially Received': 'orange', Allocated: 'green',
   // packing / delivery
   'Not Started': 'neutral', 'To Pack': 'neutral', Packing: 'blue', Packed: 'green', Issue: 'red', Ready: 'amber',
   Dispatched: 'blue', 'In Transit': 'blue', Delivered: 'green', Failed: 'red',

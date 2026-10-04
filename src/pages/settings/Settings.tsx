@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Bell, Building2, CalendarClock, CreditCard, FileText, Settings as SettingsIcon, ShieldCheck, Truck } from 'lucide-react';
+import { Bell, Building2, CalendarClock, CreditCard, FileText, ShieldCheck, Truck, Zap } from 'lucide-react';
 import { PageHeader, Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Field, Input, Textarea, Switch, Checkbox } from '../../components/ui/Field';
+import { Field, Input, Textarea, Switch } from '../../components/ui/Field';
 import { Tabs } from '../../components/ui/Tabs';
 import { Badge } from '../../components/ui/Badge';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { updateSettings } from '../../store/adminActions';
 import { useToast } from '../../components/ui/Toast';
-import { UNITS } from '../../types/models';
+import { UNITS, type AutomationSettings } from '../../types/models';
+import { automationOf } from '../../domain/ops';
 
 const SECTIONS = [
+  { key: 'automation', label: 'Automation', icon: Zap },
   { key: 'company', label: 'Company Profile', icon: Building2 },
   { key: 'tax', label: 'Tax & Units', icon: FileText },
   { key: 'cutoff', label: 'Order Cutoff', icon: CalendarClock },
@@ -19,7 +21,13 @@ const SECTIONS = [
   { key: 'invoice', label: 'Invoice & Payment Terms', icon: CreditCard },
   { key: 'notify', label: 'Notifications', icon: Bell },
   { key: 'roles', label: 'User Roles', icon: ShieldCheck },
-  { key: 'system', label: 'System Preferences', icon: SettingsIcon },
+];
+
+const AUTOMATION_OPTIONS: { key: keyof AutomationSettings; label: string; hint: string }[] = [
+  { key: 'autoApproveOrders', label: 'Approve regular orders automatically', hint: 'On-time Regular orders go straight to Approved. Late and Urgent orders still wait for a person.' },
+  { key: 'autoAcceptGoodStock', label: 'Accept good-condition stock on receipt', hint: '"Receive All" records a Grade A quality check and credits stock. Average/Damaged lines still go to Quality Check.' },
+  { key: 'autoAllocateOnReceive', label: 'Allocate stock to orders as it arrives', hint: 'Accepted stock is split across customer orders in route order, so packing can start immediately.' },
+  { key: 'autoInvoiceOnDelivery', label: 'Invoice on delivery confirmation', hint: 'The invoice is generated the moment the driver confirms, at the quantities the customer accepted.' },
 ];
 
 export function SettingsPage() {
@@ -27,8 +35,9 @@ export function SettingsPage() {
   const user = useCurrentUser()!;
   const nav = useNavigate();
   const toast = useToast();
-  const [section, setSection] = useState('company');
-  const [form, setForm] = useState(db.settings);
+  const [section, setSection] = useState('automation');
+  const [form, setForm] = useState({ ...db.settings, automation: automationOf(db) });
+  const setAuto = (k: keyof AutomationSettings, v: boolean) => setForm((f) => ({ ...f, automation: { ...automationOf({ ...db, settings: f }), [k]: v } }));
   const [notify, setNotify] = useState({ lateOrders: true, shortages: true, paymentDue: true, dailySummary: false });
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -37,12 +46,29 @@ export function SettingsPage() {
   return (
     <div>
       <PageHeader title="Settings" description="Company profile, tax, cutoff, invoicing and system preferences." />
-      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <Tabs
-          items={SECTIONS.map((s) => ({ key: s.key, label: <span className="flex items-center gap-1.5"><s.icon size={13} />{s.label}</span> }))}
-          value={section} onChange={setSection} variant="pill"
+          items={SECTIONS.map((s) => ({ key: s.key, label: s.label, icon: <s.icon size={14} className="shrink-0" /> }))}
+          value={section} onChange={setSection} variant="vertical" className="lg:sticky lg:top-20 lg:self-start"
         />
-        <Card className="lg:col-start-2">
+        <Card className="min-w-0 lg:col-start-2">
+          {section === 'automation' && (
+            <>
+              <CardHeader title="Automation" subtitle="Everything on means the daily loop runs itself; switch a step off to make it manual again." />
+              <CardBody className="flex flex-col divide-y divide-line">
+                {AUTOMATION_OPTIONS.map((o) => (
+                  <div key={o.key} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                    <div>
+                      <p className="text-[13px] font-medium text-ink">{o.label}</p>
+                      <p className="mt-0.5 text-[12px] text-muted">{o.hint}</p>
+                    </div>
+                    <Switch checked={form.automation[o.key]} onChange={(v) => setAuto(o.key, v)} />
+                  </div>
+                ))}
+              </CardBody>
+            </>
+          )}
+
           {section === 'company' && (
             <>
               <CardHeader title="Company Profile" />
@@ -124,17 +150,7 @@ export function SettingsPage() {
             </CardBody>
           )}
 
-          {section === 'system' && (
-            <>
-              <CardHeader title="System Preferences" />
-              <CardBody className="flex flex-col gap-3">
-                <Checkbox label="Keep demo data in this browser (localStorage)" checked disabled />
-                <p className="text-[12.5px] text-muted">This prototype stores all data locally in your browser. Use Reset Demo Data (in the profile menu) to restore the original seed.</p>
-              </CardBody>
-            </>
-          )}
-
-          {section !== 'roles' && section !== 'system' && section !== 'delivery' && section !== 'tax' && (
+          {section !== 'roles' && section !== 'delivery' && section !== 'tax' && (
             <div className="flex justify-end border-t border-line p-4">
               <Button variant="primary" onClick={save}>Save changes</Button>
             </div>

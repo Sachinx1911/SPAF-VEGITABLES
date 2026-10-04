@@ -39,8 +39,16 @@ export function ReceivingForm({ po, onClose }: { po: PurchaseOrder | null; onClo
       details: [{ label: 'PO', value: po.poNo }, { label: 'Lines', value: finalRows.length }],
     });
     if (!ok) return;
-    receiveStock(po.id, finalRows, user.id);
-    toast({ tone: 'success', title: 'Stock received', description: `Move to Quality Check to accept/reject.` });
+    const res = receiveStock(po.id, finalRows, user.id);
+    const waiting = finalRows.filter((r) => r.receivedQty > 0).length - res.autoAccepted;
+    toast({
+      tone: 'success', title: `${res.grn.grnNo} received`,
+      description: [
+        res.autoAccepted ? `${res.autoAccepted} lines accepted to stock` : null,
+        res.autoAllocated ? `${res.autoAllocated} items allocated to orders` : null,
+        waiting ? `${waiting} lines waiting in Quality Check` : null,
+      ].filter(Boolean).join(' · ') || 'Nothing accepted.',
+    });
     onClose();
   };
 
@@ -53,11 +61,11 @@ export function ReceivingForm({ po, onClose }: { po: PurchaseOrder | null; onClo
   };
 
   return (
-    <Drawer open={!!po} onClose={onClose} title={`Receive · ${po.poNo}`} description={`${supplier?.name} · ordered ${fmtDate(po.purchaseDate)}`} width="640px"
+    <Drawer open={!!po} onClose={onClose} title={`Receive · ${po.poNo}`} description={`${supplier?.name} · ordered ${fmtDate(po.purchaseDate)} · good-condition lines go straight to stock`} width="640px"
       footer={
         <>
           <Button variant="danger" onClick={reject}>Reject</Button>
-          <Button variant="secondary" onClick={() => submit('partial')}>Partial Receive</Button>
+          <Button variant="secondary" onClick={() => submit('partial')}>Receive as entered</Button>
           <Button variant="primary" onClick={() => submit('full')}>Receive All</Button>
         </>
       }

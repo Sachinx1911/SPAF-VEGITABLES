@@ -1,33 +1,54 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ShoppingCart } from 'lucide-react';
-import { PageHeader, Card } from '../../components/ui/Card';
+import { PencilLine, ShoppingCart } from 'lucide-react';
+import { PageHeader, Card, CardBody } from '../../components/ui/Card';
+import { DateField } from '../../components/ui/DatePicker';
 import { Button } from '../../components/ui/Button';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { DataTable, type Column } from '../../components/ui/DataTable';
-import { useDb } from '../../store/useStore';
-import { requirementRows, type RequirementRow } from '../../domain/ops';
-import { addDays, qty } from '../../lib/format';
+import { useCurrentUser, useDb } from '../../store/useStore';
+import { createPurchaseOrdersFromRequirement, planPurchaseOrders } from '../../store/procurementActions';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
+import { defaultProcurementDate, requirementRows, type RequirementRow } from '../../domain/ops';
+import { fmtDate, qty } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
 
 export function PurchaseRequirementPage() {
   const db = useDb();
+  const user = useCurrentUser()!;
   const nav = useNavigate();
+  const confirm = useConfirm();
+  const toast = useToast();
   const today = todayISO();
-  const [date, setDate] = useState(addDays(today, 1));
+  const [date, setDate] = useState(defaultProcurementDate(db, today));
+
+  const createAll = async () => {
+    const plan = planPurchaseOrders(date);
+    const lineCount = plan.reduce((s, g) => s + g.lines.length, 0);
+    const ok = await confirm({
+      title: `Create ${plan.length} purchase order${plan.length > 1 ? 's' : ''} for ${fmtDate(date)}?`,
+      description: 'Every item still to buy is split by supplier at its default purchase rate. You can receive against them straight away.',
+      confirmLabel: 'Create purchase orders',
+      details: plan.map((g) => ({ label: g.supplierName, value: `${g.lines.length} items` })),
+    });
+    if (!ok) return;
+    const pos = createPurchaseOrdersFromRequirement(date, user.id);
+    toast({ tone: 'success', title: `${pos.length} purchase orders created`, description: `${lineCount} items · ${pos.map((p) => p.poNo).join(', ')}` });
+  };
 
   const itemById = new Map(db.items.map((i) => [i.id, i]));
   const rows = useMemo(() => requirementRows(db, date), [db, date]);
   const withNames = rows.map((r) => ({ ...r, name: itemById.get(r.itemId)?.name ?? r.itemId, category: itemById.get(r.itemId)?.category ?? '' }));
 
   const columns: Column<typeof withNames[number]>[] = [
-    { key: 'item', header: 'Item', render: (r) => <span className="font-medium text-ink">{r.name} <Badge tone="neutral" className="ml-1">{r.unit}</Badge></span>, sortValue: (r) => r.name, exportValue: (r) => r.name },
+    { key: 'item', header: 'Item', nowrap: true, render: (r) => <span className="font-medium text-ink">{r.name} <Badge tone="neutral" className="ml-1">{r.unit}</Badge></span>, sortValue: (r) => r.name, exportValue: (r) => r.name },
     { key: 'category', header: 'Category', render: (r) => r.category, hideBelow: 'md' },
-    { key: 'required', header: 'Required', align: 'right', render: (r) => qty(r.required, r.unit), sortValue: (r) => r.required },
-    { key: 'stock', header: 'Stock', align: 'right', render: (r) => qty(r.stock, r.unit), hideBelow: 'lg' },
-    { key: 'purchased', header: 'Already Purchased', align: 'right', render: (r) => qty(r.purchased, r.unit), hideBelow: 'lg' },
+    { key: 'required', header: 'Required', align: 'right', nowrap: true, render: (r) => qty(r.required, r.unit), sortValue: (r) => r.required, exportValue: (r) => r.required },
+    { key: 'stock', header: 'Stock', align: 'right', nowrap: true, render: (r) => qty(r.stock, r.unit), hideBelow: 'lg', exportValue: (r) => r.stock },
+    { key: 'purchased', header: 'Already Purchased', align: 'right', nowrap: true, render: (r) => qty(r.purchased, r.unit), hideBelow: 'lg', exportValue: (r) => r.purchased },
     {
-      key: 'toPurchase', header: 'To Purchase', align: 'right',
+      key: 'toPurchase', header: 'To Purchase', align: 'right', nowrap: true, exportValue: (r) => r.toPurchase,
       render: (r) => <span className={`tabular font-semibold ${r.toPurchase > 0 ? 'text-orange-600' : 'text-emerald-600'}`}>{qty(r.toPurchase, r.unit)}</span>,
       sortValue: (r) => r.toPurchase,
     },
@@ -41,16 +62,18 @@ export function PurchaseRequirementPage() {
     <div>
       <PageHeader
         title="Purchase Requirement"
-        description={`For delivery date · ${needed} items need buying${critical ? `, ${critical} critical` : ''}`}
-        actions={<Button variant="primary" icon={ShoppingCart} onClick={() => nav(`/purchase/new?date=${date}`)}>Purchase Entry</Button>}
+        description={`Delivery ${fmtDate(date)} · ${needed} items need buying${critical ? `, ${critical} critical` : ''}`}
+        actions={
+          <>
+            <Button variant="secondary" icon={PencilLine} onClick={() => nav(`/purchase/new?date=${date}`)}>Manual entry</Button>
+            <Button variant="primary" icon={ShoppingCart} onClick={createAll} disabled={!needed}>Create purchase orders{needed ? ` (${needed})` : ''}</Button>
+          </>
+        }
       />
       <Card className="mb-4">
-        <div className="flex items-center gap-3 p-3.5">
-          <div>
-            <label className="mb-1 block text-[11.5px] font-medium text-muted">Delivery date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 rounded-lg border border-line px-3 text-[13px]" />
-          </div>
-        </div>
+        <CardBody className="flex flex-wrap items-end gap-3">
+          <DateField label="Delivery date" value={date} onChange={setDate} />
+        </CardBody>
       </Card>
       <Card>
         <DataTable

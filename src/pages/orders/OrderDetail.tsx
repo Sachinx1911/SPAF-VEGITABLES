@@ -14,7 +14,8 @@ import { Menu } from '../../components/ui/Dropdown';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { approveOrder } from '../../store/orderActions';
+import { approveOrder, markChangesReviewed } from '../../store/orderActions';
+import { summarizeAmendment, unreviewedAmendments } from '../../domain/orders';
 import { can } from '../../lib/nav';
 import { ROLES } from '../../data/seed/roles';
 import { fmtDate, fmtDateTime, fmtTime, initials, inr } from '../../lib/format';
@@ -65,6 +66,13 @@ export function OrderDetailPage() {
   const payments = db.payments.filter((p) => invoices.some((i) => i.id === p.invoiceId));
   const audit = db.auditLogs.filter((a) => a.recordRef === order.orderNo).slice(0, 6);
 
+  const amendments = [...(order.amendments ?? [])].reverse(); // newest first
+  const pendingChanges = unreviewedAmendments(order);
+  const latest = amendments[0];
+  /** itemId → what the most recent change did to that line, for the chip in the items table. */
+  const latestMark = new Map<string, 'added' | 'changed'>();
+  if (latest && pendingChanges.length) for (const l of latest.lines) if (l.to != null) latestMark.set(l.itemId, l.from == null ? 'added' : 'changed');
+
   const poLinks = useMemo(() => {
     const itemIds = new Set(lines.map((l) => l.itemId));
     const pos = db.purchaseOrders.filter((p) => p.forDeliveryDate === order.deliveryDate);
@@ -87,8 +95,18 @@ export function OrderDetailPage() {
       state: order.status === 'Rejected' ? 'failed' : order.approvedAt ? 'done' : 'active',
     },
     { label: 'Consolidation', at: order.lockedAt, note: order.lockedAt ? 'Included' : 'Pending', state: order.lockedAt ? 'done' : 'pending' },
-    { label: 'Purchase', at: null, note: reached('purchased') ? 'Completed' : 'Pending', state: reached('purchased') ? 'done' : 'pending' },
-    { label: 'Receiving', at: null, note: reached('received') ? 'Completed' : 'Pending', state: reached('received') ? 'done' : 'pending' },
+    // Purchase and receiving happen per item for the whole delivery day, not per order line —
+    // so the tracker looks at the day's POs / GRNs that cover this order's items.
+    {
+      label: 'Purchase', at: poLinks.pos[0]?.createdAt ?? null,
+      note: poLinks.items.length ? `${poLinks.pos.length} PO${poLinks.pos.length === 1 ? '' : 's'}` : order.lockedAt ? 'Pending' : 'Awaiting lock',
+      state: poLinks.items.length ? 'done' : order.lockedAt ? 'active' : 'pending',
+    },
+    {
+      label: 'Receiving', at: poLinks.receivings[0]?.receivedAt ?? null,
+      note: poLinks.receivings.length ? `${poLinks.receivings.length} GRN${poLinks.receivings.length === 1 ? '' : 's'}` : poLinks.pos.length ? 'Awaited' : 'Pending',
+      state: poLinks.receivings.length ? 'done' : poLinks.pos.length ? 'active' : 'pending',
+    },
     { label: 'Allocation', at: null, note: reached('allocated') ? 'Completed' : 'Pending', state: reached('allocated') ? 'done' : 'pending' },
     {
       label: 'Packing', at: packing?.packedAt ?? packing?.startedAt ?? null,
@@ -167,6 +185,21 @@ export function OrderDetailPage() {
       )}
       {order.status === 'Rejected' && order.remarks && <Alert tone="error" title="Rejected">{order.remarks}</Alert>}
 
+      {pendingChanges.length > 0 && latest && (
+        <div className="flex flex-col gap-3 rounded-card border border-red-200 bg-red-50/70 p-4 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-semibold text-red-800">
+              Customer changed this order{pendingChanges.length > 1 ? ` ${pendingChanges.length} times` : ''} · last at {fmtDateTime(latest.at)}
+            </p>
+            <p className="mt-1 text-[12.5px] text-red-900/80">{summarizeAmendment(latest, itemById).text}</p>
+            <p className="mt-1 text-[11.5px] text-red-900/60">Added and changed lines are flagged in the items table below; the full history is in "Customer changes".</p>
+          </div>
+          <Button variant="secondary" icon={Check} onClick={() => { markChangesReviewed(order.id, user.id); toast({ tone: 'success', title: 'Marked as reviewed' }); }} className="shrink-0 border-red-200 text-red-700 hover:bg-red-100">
+            Mark reviewed
+          </Button>
+        </div>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-12">
         {/* ----------------------------------------------------- left column */}
         <div className="flex flex-col gap-4 xl:col-span-9">
@@ -210,7 +243,7 @@ export function OrderDetailPage() {
                 <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700"><Check size={17} /></span>
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold tracking-wide text-subtle uppercase">Approved By</p>
-                  <p className="truncate text-[13px] font-medium text-ink">{order.approvedBy ? userById.get(order.approvedBy)?.name ?? '—' : 'Not approved yet'}</p>
+                  <p className="truncate text-[13px] font-medium text-ink">{order.approvedBy ? userById.get(order.approvedBy)?.name ?? '—' : order.approvedAt ? 'Auto-approved' : 'Not approved yet'}</p>
                   <p className="text-[11.5px] text-muted">{order.approvedAt ? fmtDateTime(order.approvedAt) : '—'}</p>
                 </div>
               </div>
@@ -295,6 +328,12 @@ export function OrderDetailPage() {
                           <td className="tabular px-3 py-2 text-subtle">{i + 1}</td>
                           <td className="px-3 py-2 font-medium whitespace-nowrap text-ink">
                             <span className="mr-1.5">{itemEmoji(item.name, item.category)}</span>{item.name}
+                            {latestMark.get(l.itemId) && (
+                              <span className={cn('ml-1.5 rounded px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide uppercase',
+                                latestMark.get(l.itemId) === 'added' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+                                {latestMark.get(l.itemId) === 'added' ? 'Added' : `Was ${latest!.lines.find((x) => x.itemId === l.itemId)?.from}`}
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-muted">{item.category}</td>
                           <td className="px-3 py-2 text-muted">{l.unit}</td>
@@ -434,6 +473,45 @@ export function OrderDetailPage() {
               </div>
             )}
           </div>
+
+          {amendments.length > 0 && (
+            <Panel title="Customer changes" icon={Repeat}>
+              <div className="flex flex-col divide-y divide-line">
+                {amendments.map((a, idx) => {
+                  const sum = summarizeAmendment(a, itemById);
+                  const unseen = pendingChanges.some((p) => p.id === a.id);
+                  return (
+                    <div key={a.id} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+                        <span className="font-semibold text-ink">Change {amendments.length - idx}</span>
+                        <span>{fmtDateTime(a.at)}</span>
+                        <span>· by {userById.get(a.by)?.name ?? 'Customer'} · {a.source}</span>
+                        {unseen && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-red-700 uppercase">New</span>}
+                        <span className="ml-auto tabular">{[sum.added && `+${sum.added} added`, sum.removed && `−${sum.removed} removed`, sum.changed && `${sum.changed} qty changed`].filter(Boolean).join(' · ')}</span>
+                      </div>
+                      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                        {a.lines.map((l) => {
+                          const it = itemById.get(l.itemId);
+                          const kind = l.from == null ? 'added' : l.to == null ? 'removed' : 'changed';
+                          return (
+                            <div key={l.itemId} className={cn('flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12.5px]',
+                              kind === 'added' ? 'border-emerald-200 bg-emerald-50/60' : kind === 'removed' ? 'border-red-200 bg-red-50/60' : 'border-amber-200 bg-amber-50/60')}>
+                              <span className={cn('w-16 shrink-0 text-[10px] font-bold tracking-wide uppercase',
+                                kind === 'added' ? 'text-emerald-700' : kind === 'removed' ? 'text-red-700' : 'text-amber-700')}>{kind}</span>
+                              <span className="min-w-0 flex-1 truncate text-ink">{it?.name ?? l.itemId}</span>
+                              <span className="tabular shrink-0 text-muted">
+                                {kind === 'added' ? `${l.to} ${l.unit}` : kind === 'removed' ? <s>{l.from} {l.unit}</s> : <>{l.from} → <b className="text-ink">{l.to}</b> {l.unit}</>}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Panel>
+          )}
 
           {/* bottom trio */}
           <div className="grid gap-4 lg:grid-cols-3">

@@ -6,7 +6,7 @@ import { Select } from '../../components/ui/Field';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { Modal, Drawer } from '../../components/ui/Overlay';
-import { Field, PriceInput } from '../../components/ui/Field';
+import { Field, Input, PriceInput } from '../../components/ui/Field';
 import { InlineError } from '../../components/ui/States';
 import { useCurrentUser, useDb } from '../../store/useStore';
 import { setCustomerPrice } from '../../store/actions';
@@ -118,7 +118,7 @@ export function CustomerPricesPage() {
           <Field label="Customer" required>{(id) => <Select id={id} value={form.customerId} onChange={(e) => setForm((f) => ({ ...f, customerId: e.target.value }))} placeholder="Select customer…" options={db.customers.map((c) => ({ value: c.id, label: c.name }))} />}</Field>
           <Field label="Item" required>{(id) => <Select id={id} value={form.itemId} onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value }))} placeholder="Select item…" options={db.items.map((i) => ({ value: i.id, label: `${i.name} (${i.unit})` }))} />}</Field>
           <Field label="Selling price" required>{() => <PriceInput value={form.price} onChange={(v) => setForm((f) => ({ ...f, price: v }))} unit={item?.unit} />}</Field>
-          <Field label="Effective from" hint="Any current price for this customer + item ends the day before.">{(id) => <input id={id} type="date" value={form.effectiveFrom} onChange={(e) => setForm((f) => ({ ...f, effectiveFrom: e.target.value }))} className="h-9 rounded-lg border border-line px-3 text-[13px]" />}</Field>
+          <Field label="Effective from" hint="Any current price for this customer + item ends the day before.">{(id) => <Input id={id} type="date" value={form.effectiveFrom} onChange={(e) => setForm((f) => ({ ...f, effectiveFrom: e.target.value }))} />}</Field>
           {error && <InlineError>{error}</InlineError>}
         </div>
       </Modal>

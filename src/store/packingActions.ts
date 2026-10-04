@@ -1,14 +1,14 @@
 import type { Challan, PackageType, Packing, PackingItem, Unit } from '../types/models';
 import { useStore } from './useStore';
-import { uid } from '../lib/id';
+import { uid, nextDocNo, docPrefix } from '../lib/id';
 import { nowISO } from '../lib/clock';
+import { packingBoard } from '../domain/packing';
+import { automationOf } from '../domain/ops';
+import { generateInvoice } from './financeActions';
 
 function auditRow(userId: string, action: string, module: string, recordRef: string, customerId: string | null, oldValue: string, newValue: string, status: 'Success' | 'Warning' = 'Success') {
   return { id: uid('a'), at: nowISO(), userId, action, module: module as any, recordRef, customerId, oldValue, newValue, device: 'Chrome · Windows', status };
 }
-
-let pkSeq = 200;
-let dcSeq = 200;
 
 const packageTypeFor = (unit: Unit, qty: number): PackageType => (unit === 'Box' ? 'Box' : unit === 'Kg' && qty >= 10 ? 'Crate' : 'Bag');
 
@@ -23,7 +23,7 @@ export function getOrCreatePacking(orderId: string, userId: string): Packing {
   const allocations = db.allocations.filter((a) => a.orderId === orderId);
 
   const packing: Packing = {
-    id: uid('pk'), packingNo: `PK-2609-${String(++pkSeq).padStart(4, '0')}`, orderId, customerId: order.customerId, deliveryDate: order.deliveryDate,
+    id: uid('pk'), packingNo: nextDocNo(db.packings.map((p) => p.packingNo), docPrefix('PK', order.deliveryDate)), orderId, customerId: order.customerId, deliveryDate: order.deliveryDate,
     status: 'To Pack', packages: 0, packedBy: null, startedAt: null, packedAt: null, verified: false, issue: '',
   };
   const items: PackingItem[] = lines.map((l) => ({
@@ -39,6 +39,32 @@ export function getOrCreatePacking(orderId: string, userId: string): Packing {
   return packing;
 }
 
+/** Packs every open order for a delivery date exactly as allocated and generates all challans. */
+export function packAllOrders(date: string, userId: string, routeId?: string): number {
+  const rows = packingBoard(useStore.getState().db, date).filter((r) => r.status !== 'Packed' && (!routeId || r.route?.id === routeId));
+  for (const r of rows) {
+    const packing = getOrCreatePacking(r.order.id, userId);
+    packAllAsAllocated(packing.id, userId);
+    markPacked(packing.id, userId);
+  }
+  return rows.length;
+}
+
+/** Marks one order packed as allocated — the quick action on the packing board. */
+export function packOrderAsAllocated(orderId: string, userId: string): Challan {
+  const packing = getOrCreatePacking(orderId, userId);
+  packAllAsAllocated(packing.id, userId);
+  return markPacked(packing.id, userId);
+}
+
+/** Dispatches every challan that is Ready for a date (optionally one route). */
+export function dispatchAllReady(date: string, userId: string, routeId?: string): number {
+  const { db } = useStore.getState();
+  const list = db.challans.filter((c) => c.challanDate === date && c.status === 'Ready' && (!routeId || c.routeId === routeId));
+  for (const c of list) dispatchChallan(c.id, userId);
+  return list.length;
+}
+
 export function setPackedQty(packingItemId: string, packedQty: number | null, userId: string) {
   const { db, commit } = useStore.getState();
   const item = db.packingItems.find((i) => i.id === packingItemId);
@@ -48,6 +74,19 @@ export function setPackedQty(packingItemId: string, packedQty: number | null, us
     packings: d.packings.map((p) => (p.id === item.packingId && p.status === 'To Pack' ? { ...p, status: 'Packing', startedAt: p.startedAt ?? nowISO(), packedBy: userId } : p)),
     orders: d.orders.map((o) => (o.id === d.packings.find((p) => p.id === item.packingId)?.orderId ? { ...o, packingStatus: 'Packing' } : o)),
   }));
+}
+
+/** Packer's fast path for a clean order: every line still blank is packed exactly as allocated. */
+export function packAllAsAllocated(packingId: string, userId: string) {
+  const { commit } = useStore.getState();
+  commit((d) => {
+    const packing = d.packings.find((p) => p.id === packingId);
+    return {
+      packingItems: d.packingItems.map((i) => (i.packingId === packingId && i.packedQty == null ? { ...i, packedQty: i.allocatedQty } : i)),
+      packings: d.packings.map((p) => (p.id === packingId && p.status === 'To Pack' ? { ...p, status: 'Packing', startedAt: p.startedAt ?? nowISO(), packedBy: userId } : p)),
+      orders: d.orders.map((o) => (o.id === packing?.orderId && o.packingStatus === 'To Pack' ? { ...o, packingStatus: 'Packing' } : o)),
+    };
+  });
 }
 
 export function setPackageType(packingItemId: string, packageType: PackageType) {
@@ -77,7 +116,7 @@ export function markPacked(packingId: string, userId: string): Challan {
   const packages = Math.max(1, Math.ceil(finalItems.reduce((s, i) => s + (i.packageType === 'Crate' ? 1 : 0.34), 0)));
 
   const challan: Challan = {
-    id: uid('dc'), challanNo: `DC-2609-${String(++dcSeq).padStart(4, '0')}`, packingId, orderId: order.id, customerId: customer.id,
+    id: uid('dc'), challanNo: nextDocNo(db.challans.map((c) => c.challanNo), docPrefix('DC', order.deliveryDate)), packingId, orderId: order.id, customerId: customer.id,
     routeId: customer.routeId, challanDate: order.deliveryDate, driverId: db.routes.find((r) => r.id === customer.routeId)?.driverId ?? null,
     vehicleNo: db.routes.find((r) => r.id === customer.routeId)?.vehicleNo ?? '', status: 'Ready', packages,
     lines: finalItems.map((i) => ({ orderItemId: i.orderItemId, itemId: i.itemId, unit: i.unit, qty: i.packedQty! })),
@@ -153,19 +192,29 @@ export function confirmDelivery(
   const isPartial = input.mode === 'Partial' || input.mode === 'Refused' || challan.lines.some((l) => (deliveredMap.get(l.orderItemId)?.deliveredQty ?? l.qty) < l.qty);
   const status: Challan['status'] = input.mode === 'Refused' ? 'Failed' : isPartial ? 'Partial' : 'Delivered';
 
-  commit((d) => ({
-    challans: d.challans.map((c) => (c.id === challanId ? { ...c, status, deliveredAt: now, receivedByName: input.receivedByName, signature: input.signature, photo: input.photo, deliveryRemarks: input.remarks } : c)),
-    orderItems: d.orderItems.map((l) => {
+  commit((d) => {
+    const orderItems = d.orderItems.map((l) => {
       const res = deliveredMap.get(l.id);
       if (!res) return l;
       return { ...l, qty: { ...l.qty, delivered: res.deliveredQty, customerAccepted: res.deliveredQty }, remarks: res.reason || l.remarks };
-    }),
+    });
+    // Judge fulfilment on the lines *after* this delivery is written, not the stale copy.
+    const lines = orderItems.filter((l) => l.orderId === order.id);
+    const fulfilled = lines.every((l) => (l.qty.customerAccepted ?? 0) >= (l.qty.approved ?? l.qty.ordered ?? 0));
+    return {
+    challans: d.challans.map((c) => (c.id === challanId ? { ...c, status, deliveredAt: now, receivedByName: input.receivedByName, signature: input.signature, photo: input.photo, deliveryRemarks: input.remarks } : c)),
+    orderItems,
     orders: d.orders.map((o) => {
       if (o.id !== order.id) return o;
-      const lines = d.orderItems.filter((l) => l.orderId === o.id);
-      const fulfilled = lines.every((l) => l.qty.customerAccepted === l.qty.approved);
       return { ...o, deliveryStatus: status === 'Failed' ? 'Failed' : status, status: fulfilled ? 'Completed' : 'Partially Fulfilled', invoiceStatus: 'Ready' };
     }),
     auditLogs: [auditRow(userId, status === 'Partial' ? 'Delivery confirmed (partial)' : 'Delivery confirmed', 'delivery', challan.challanNo, challan.customerId, 'In Transit', status, status === 'Delivered' ? 'Success' : 'Warning'), ...d.auditLogs],
-  }));
+    };
+  });
+
+  // Delivered goods are invoiced on the spot — accounts only step in for exceptions.
+  if (status !== 'Failed' && automationOf(db).autoInvoiceOnDelivery && !db.invoices.some((i) => i.orderId === order.id)) {
+    const after = useStore.getState().db;
+    if (after.orderItems.some((l) => l.orderId === order.id && (l.qty.customerAccepted ?? 0) > 0)) generateInvoice(order.id, userId);
+  }
 }

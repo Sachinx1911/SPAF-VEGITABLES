@@ -10,7 +10,7 @@ import { deriveNotifications, type NotificationType } from '../../domain/notific
 import { todayISO, nowISO } from '../../lib/clock';
 import { relativeTime } from '../../lib/format';
 
-const TYPES: NotificationType[] = ['Late Order', 'Pending Approval', 'Purchase Required', 'Shortage', 'Packing Pending', 'Packing Issue', 'Dispatch Pending', 'Payment Due', 'Overdue Invoice'];
+const TYPES: NotificationType[] = ['Order Changed', 'Late Order', 'Pending Approval', 'Purchase Required', 'Shortage', 'Packing Pending', 'Packing Issue', 'Dispatch Pending', 'Payment Due', 'Overdue Invoice'];
 
 export function NotificationsPage() {
   const db = useDb();

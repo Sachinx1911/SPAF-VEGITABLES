@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Field';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { Tabs } from '../../components/ui/Tabs';
+import { DateField } from '../../components/ui/DatePicker';
 import { EmptyState } from '../../components/ui/States';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
@@ -34,12 +35,13 @@ export function ConsolidationPage() {
   const lock = db.locks.find((l) => l.deliveryDate === date);
   const isLocked = !!lock;
   const pendingCount = db.orders.filter((o) => o.deliveryDate === date && (o.status === 'Submitted' || o.status === 'Late')).length;
+  const newApproved = isLocked ? db.orders.filter((o) => o.deliveryDate === date && o.status === 'Approved').length : 0;
   const itemQtyRows = itemQuantityReport({ ...matrix, rows });
 
   const doLock = async () => {
     const ok = await confirm({
-      title: 'Lock orders for this delivery date?',
-      description: `Orders can no longer be edited, and the purchase requirement generates automatically.`,
+      title: isLocked ? 'Add the new orders to the lock?' : 'Lock orders for this delivery date?',
+      description: isLocked ? 'The purchase requirement grows to cover them; everything already locked stays as it is.' : `Orders can no longer be edited, and the purchase requirement generates automatically.`,
       confirmLabel: 'Lock orders',
       details: [{ label: 'Delivery date', value: fmtDate(date) }, { label: 'Orders', value: matrix.orders.length }, { label: 'Items', value: rows.length }],
     });
@@ -59,20 +61,23 @@ export function ConsolidationPage() {
             {!isLocked ? (
               <Button variant="primary" icon={Lock} onClick={doLock} disabled={!matrix.orders.length}>Lock Orders</Button>
             ) : (
-              <Button variant="secondary" icon={ShoppingCart} onClick={() => nav('/purchase')}>View Purchase Requirement</Button>
+              <>
+                {newApproved > 0 && <Button variant="primary" icon={Lock} onClick={doLock}>Add {newApproved} new order{newApproved > 1 ? 's' : ''} to lock</Button>}
+                <Button variant="secondary" icon={ShoppingCart} onClick={() => nav('/purchase')}>View Purchase Requirement</Button>
+              </>
             )}
           </>
         }
       />
 
       <Card className="mb-4">
-        <div className="flex flex-wrap items-center gap-3 p-3.5">
+        <div className="flex flex-wrap items-end gap-3 p-3.5">
+          <DateField label="Delivery date" value={date} onChange={setDate} />
           <div>
-            <label className="mb-1 block text-[11.5px] font-medium text-muted">Delivery date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 rounded-lg border border-line px-3 text-[13px]" />
+            <label className="mb-1 block text-[11.5px] font-medium text-muted">Category</label>
+            <Select value={category} onChange={(e) => setCategory(e.target.value)} placeholder="All categories" options={[...CATEGORIES]} className="w-44" />
           </div>
-          <Select value={category} onChange={(e) => setCategory(e.target.value)} placeholder="All categories" options={[...CATEGORIES]} className="mt-5 w-44" />
-          <div className="ml-auto mt-5 flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 pb-1.5">
             {isLocked ? (
               <Badge tone="violet" dot><Lock size={11} className="mr-1 inline" />Locked · {fmtDateTime(lock!.lockedAt)}</Badge>
             ) : (

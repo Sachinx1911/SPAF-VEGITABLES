@@ -17,6 +17,7 @@ export interface Column<T> {
   width?: string;
   sticky?: boolean;
   hideBelow?: 'md' | 'lg'; // collapse into the card view under this breakpoint
+  nowrap?: boolean; // dates, document numbers, amounts — never break mid-value
   exportValue?: (row: T) => string | number;
   defaultHidden?: boolean;
 }
@@ -246,6 +247,7 @@ export function DataTable<T>({
                           className={cn(
                             'px-3 py-1.5 text-ink',
                             c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left',
+                            c.nowrap && 'whitespace-nowrap',
                             c.sticky && 'sticky left-0 z-10 bg-white',
                             c.hideBelow === 'md' && 'hidden md:table-cell',
                             c.hideBelow === 'lg' && 'hidden lg:table-cell',

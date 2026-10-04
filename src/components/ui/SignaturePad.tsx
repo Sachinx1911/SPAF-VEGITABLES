@@ -70,7 +70,7 @@ export function SignaturePad({ value, onChange, label = 'Customer signature', he
       <div className="mb-1.5 flex items-center justify-between">
         <p className="text-[12.5px] font-medium text-ink">{label}</p>
         {!empty && (
-          <button onClick={clear} className="flex items-center gap-1 text-xs text-muted hover:text-ink">
+          <button onClick={clear} className="hidden items-center gap-1 text-xs text-muted hover:text-ink md:flex">
             <RotateCcw size={12} /> Clear
           </button>
         )}

@@ -37,21 +37,27 @@ export function PlaceOrderPage() {
   // An order already in for this delivery date turns the screen into "add to it"
   // instead of starting a second one — the basket opens holding what they asked for.
   const [existing] = useState(() => editableOrder(db, customer.id, deliveryDate));
+  // The day's order is already locked: this screen now builds a separate top-up order, starting empty.
+  const [lockedOrder] = useState(() => (existing ? null
+    : db.orders.find((o) => o.customerId === customer.id && o.deliveryDate === deliveryDate && !!o.lockedAt && o.status !== 'Rejected') ?? null));
   const basket = useOrderBasket(
     db, customer.id, deliveryDate,
-    existing ? existing.lines.map((l) => ({ itemId: l.itemId, qty: l.qty.ordered ?? 0 })) : undefined,
+    existing ? existing.lines.map((l) => ({ itemId: l.itemId, qty: l.qty.ordered ?? 0 })) : lockedOrder ? [] : undefined,
   );
 
-  const [mode, setMode] = useState<'regular' | 'new'>(() => (new URLSearchParams(loc.search).get('mode') === 'new' ? 'new' : 'regular'));
+  const [mode, setMode] = useState<'regular' | 'new'>(() => (new URLSearchParams(loc.search).get('mode') === 'new' || (lockedOrder && new URLSearchParams(loc.search).get('mode') !== 'regular') ? 'new' : 'regular'));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addOpen, setAddOpen] = useState(false);
   const [repeatOpen, setRepeatOpen] = useState(() => new URLSearchParams(loc.search).get('repeat') === '1');
   const [saveOpen, setSaveOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [placedStatus, setPlacedStatus] = useState<string>('');
   const [appliedTemplate, setAppliedTemplate] = useState(false);
 
   const prev = previousOrder(db, customer.id);
+  const editingTopUp = !!existing && existing.orderType === 'Top-up';
+  const plural = (n: number) => `${n} item${n === 1 ? '' : 's'}`;
   const pastCutoff = isPastCutoff(nowISO(), db.settings.orderCutoffTime);
   const templates = db.standingTemplates.filter((t) => t.customerId === customer.id);
 
@@ -176,8 +182,10 @@ export function PlaceOrderPage() {
 
   const send = () => {
     const lines = basket.lines.map((l) => ({ itemId: l.itemId, unit: l.unit, qty: l.qty, rate: l.rate }));
-    if (existing) amendOrder(existing.id, lines, user.id);
-    else createOrder({ customerId: customer.id, deliveryDate, source: 'Customer Portal', lines }, user.id);
+    const placed = existing
+      ? amendOrder(existing.id, lines, user.id)
+      : createOrder({ customerId: customer.id, deliveryDate, source: 'Customer Portal', orderType: lockedOrder ? 'Top-up' : 'Regular', lines }, user.id);
+    setPlacedStatus(placed.status);
     setReviewOpen(false);
     setSubmitted(true);
   };
@@ -186,9 +194,15 @@ export function PlaceOrderPage() {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center gap-3 px-6 text-center">
         <div className="grid size-16 place-items-center rounded-full bg-emerald-50 text-emerald-600"><Check size={32} /></div>
-        <h2 className="text-[19px] font-semibold text-ink">{existing ? 'Order updated!' : 'Order placed!'}</h2>
+        <h2 className="text-[19px] font-semibold text-ink">{existing ? 'Order updated!' : lockedOrder ? 'Top-up order placed!' : 'Order placed!'}</h2>
         <p className="max-w-xs text-[13.5px] text-muted">
-          We'll confirm it before the {db.settings.orderCutoffTime} cutoff. You'll see it in Orders once approved.
+          {placedStatus === 'Approved'
+            ? `Confirmed for ${fmtDate(deliveryDate)} delivery — nothing more to do.`
+            : placedStatus === 'Submitted' && lockedOrder
+              ? `Our team will confirm the extra items for ${fmtDate(deliveryDate)} shortly.`
+            : placedStatus === 'Late'
+              ? `Received after the ${db.settings.orderCutoffTime} cutoff — our team will confirm it shortly.`
+              : `We'll confirm it before the ${db.settings.orderCutoffTime} cutoff. You'll see it in Orders once approved.`}
         </p>
         <div className="mt-3 flex gap-2">
           <Button variant="secondary" onClick={() => nav('/portal/orders')}>View orders</Button>
@@ -226,7 +240,7 @@ export function PlaceOrderPage() {
         </button>
       </header>
 
-      <div className="flex flex-col gap-3.5 px-4 pt-1 pb-2">
+      <div className="flex flex-col gap-3.5 px-4 pt-1 pb-24">
         {/* ----------------------------------------------------- page title */}
         <div className="relative">
           <h1 className="text-[32px] leading-none font-bold tracking-[-0.02em] text-ink">Order</h1>
@@ -239,24 +253,36 @@ export function PlaceOrderPage() {
         {/* ---------------------------------------------------- mode switch */}
         <div className="grid grid-cols-2 gap-2.5">
           <ModeCard active={mode === 'regular'} icon={RefreshCw} title="Regular Order" sub="Your fixed items" onClick={() => switchMode('regular')} />
-          <ModeCard active={mode === 'new'} icon={Plus} title="New Order" sub="Add different items" onClick={() => switchMode('new')} />
+          <ModeCard active={mode === 'new'} icon={Plus} title="New Order" sub="Pick other items" onClick={() => switchMode('new')} />
         </div>
 
         {/* ----------------------------------------------------- ready card */}
-        {mode === 'regular' && rows.length > 0 && (
+        {editingTopUp && (
+          <p className="rounded-xl bg-blue-50 px-3.5 py-2.5 text-[12.5px] text-blue-800">
+            You are editing top-up order <b>{existing!.orderNo}</b> for {fmtDate(deliveryDate)}. Your main order for the day is already locked and being prepared.
+          </p>
+        )}
+
+        {mode === 'regular' && rows.length > 0 && !editingTopUp && (
           <button
             onClick={() => (prev && !existing ? setRepeatOpen(true) : setAddOpen(true))}
             className="flex items-center gap-3 rounded-2xl border border-brand-200 bg-fresh-50/70 p-3.5 text-left"
           >
             <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-white text-brand-700"><Package size={22} /></span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold text-ink">Your regular order is ready</p>
+              <p className="text-[15px] font-semibold text-ink">{existing ? 'Your order for the day' : 'Your regular order is ready'}</p>
               <p className="truncate text-[12.5px] text-muted">
-                {rows.length} items · {existing ? `From ${existing.orderNo}` : prev ? `From your last order (${fmtDate(prev.deliveryDate)})` : 'From your usual items'}
+                {plural(rows.length)} · {existing ? `${existing.orderNo} · tap to add more` : prev ? `From your last order (${fmtDate(prev.deliveryDate)})` : 'From your usual items'}
               </p>
             </div>
             <ChevronRight size={20} className="shrink-0 text-subtle" />
           </button>
+        )}
+
+        {lockedOrder && (
+          <p className="rounded-xl bg-blue-50 px-3.5 py-2.5 text-[12.5px] text-blue-800">
+            <b>{lockedOrder.orderNo}</b> for {fmtDate(deliveryDate)} is locked and being prepared. Items you add here go as a separate <b>top-up order</b>.
+          </p>
         )}
 
         {pastCutoff && (
@@ -265,7 +291,7 @@ export function PlaceOrderPage() {
           </p>
         )}
 
-        {mode === 'regular' && templates.length > 0 && (
+        {mode === 'regular' && templates.length > 0 && !editingTopUp && (
           <div className="flex flex-col gap-2">
             {templates.map((t) => (
               <div key={t.id} className="flex items-center gap-2.5 rounded-xl border border-line bg-white p-2.5">
@@ -311,7 +337,7 @@ export function PlaceOrderPage() {
         <div className="flex items-center justify-between pt-1">
           <div className="min-w-0">
             <h2 className="text-[19px] font-bold text-ink">
-              {mode === 'regular' ? 'Regular Items' : 'Your Items'} ({rows.length})
+              {editingTopUp ? 'Top-up Items' : mode === 'regular' ? 'Regular Items' : 'Your Items'} ({rows.length})
             </h2>
             {changed.size > 0 && <p className="text-[11.5px] font-medium text-brand-700">{changed.size} changed — shown at the top</p>}
           </div>
@@ -342,7 +368,7 @@ export function PlaceOrderPage() {
             return (
               <div
                 key={r.item.id}
-                className={cn('flex items-center gap-2 rounded-2xl border bg-white p-2.5 transition-colors',
+                className={cn('flex items-center gap-1.5 rounded-2xl border bg-white p-2 transition-colors',
                   mark ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-200' : isSel ? 'border-brand-400' : 'border-line')}
               >
                 <button
@@ -353,13 +379,14 @@ export function PlaceOrderPage() {
                   <Box checked={isSel} />
                 </button>
 
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-canvas text-[24px]">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-canvas text-[22px]">
                   {itemEmoji(r.item.name, r.item.category)}
                 </span>
 
                 <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-1.5 text-[15px] font-semibold text-ink">
-                    <span className="truncate">{r.item.name}</span>
+                  <p className="line-clamp-2 text-[14px] leading-tight font-semibold text-ink">{r.item.name}</p>
+                  <p className="tabular flex items-center gap-1.5 truncate text-[12px] text-muted">
+                    {inr(r.rate, true)} / {r.item.unit}
                     {mark && (
                       <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide uppercase',
                         mark === 'added' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
@@ -367,11 +394,10 @@ export function PlaceOrderPage() {
                       </span>
                     )}
                   </p>
-                  <p className="tabular truncate text-[12.5px] text-muted">{inr(r.rate, true)} / {r.item.unit}</p>
                   {r.lastQty != null && (
                     <button
                       onClick={() => setQty(r.item.id, r.lastQty)}
-                      className="mt-1 inline-flex items-center gap-1 rounded-lg bg-fresh-50 px-2 py-1 text-[11.5px] font-medium text-brand-700"
+                      className="mt-1 inline-flex items-center gap-1 rounded-lg bg-fresh-50 px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-brand-700"
                     >
                       <RefreshCw size={11} /> Last: {r.lastQty} {r.item.unit}
                     </button>
@@ -383,10 +409,11 @@ export function PlaceOrderPage() {
                   unit={r.item.unit}
                   onChange={(v) => setQty(r.item.id, v)}
                   showUnit={false}
-                  widthClass="w-[108px]"
+                  widthClass="w-[100px]"
+                  size="sm"
                   aria-label={`${r.item.name} quantity`}
                 />
-                <span className="w-6 shrink-0 text-[12.5px] font-medium text-muted">{r.item.unit}</span>
+                <span className="w-7 shrink-0 text-[12px] font-medium text-muted">{r.item.unit}</span>
               </div>
             );
           })}
@@ -401,37 +428,32 @@ export function PlaceOrderPage() {
           )}
         </div>
 
-        {basket.totalItems > 0 && (
+        {basket.totalItems > 0 && !editingTopUp && !lockedOrder && (
           <Button variant="secondary" icon={Save} onClick={() => setSaveOpen(true)}>Save this as my regular order</Button>
         )}
       </div>
 
       {/* -------------------------------------------------------- sticky bar */}
       <div className="fixed inset-x-0 bottom-16 z-20 mx-auto w-full max-w-lg px-3 pb-2">
-        <div className="flex items-center gap-3 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-pop">
-          <span className="relative grid size-12 shrink-0 place-items-center rounded-xl bg-fresh-50 text-brand-700">
-            <ShoppingCart size={21} />
+        <div className="flex items-center gap-2.5 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-pop">
+          <span className="relative grid size-11 shrink-0 place-items-center rounded-xl bg-fresh-50 text-brand-700">
+            <ShoppingCart size={20} />
             {basket.totalItems > 0 && (
-              <span className="tabular absolute -top-1.5 -right-1.5 grid min-w-[21px] place-items-center rounded-full bg-brand-700 px-1 text-[10.5px] font-bold text-white ring-2 ring-white">
+              <span className="tabular absolute -top-1.5 -right-1.5 grid min-w-[20px] place-items-center rounded-full bg-brand-700 px-1 text-[10.5px] font-bold text-white ring-2 ring-white">
                 {basket.totalItems}
               </span>
             )}
           </span>
-          <div className="shrink-0">
-            <p className="text-[11px] text-muted">Total Items</p>
-            <p className="tabular text-[18px] leading-none font-bold text-ink">{basket.totalItems}</p>
-          </div>
-          <div className="h-9 w-px shrink-0 bg-line" />
-          <div className="min-w-0 shrink-0">
-            <p className="text-[11px] text-muted">Estimated Amount</p>
+          <div className="min-w-0 flex-1">
+            <p className="tabular truncate text-[11px] text-muted">{plural(basket.totalItems)} · estimated</p>
             <p className="tabular text-[18px] leading-none font-bold text-ink">{inr(basket.totalAmount)}</p>
           </div>
           <button
             onClick={() => (basket.totalItems ? setReviewOpen(true) : toast({ tone: 'error', title: 'Add at least one item first' }))}
-            className="ml-auto flex shrink-0 items-center gap-2 rounded-xl bg-brand-800 px-4 py-3.5 text-[15px] font-semibold text-white active:scale-[0.99]"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-800 px-4 py-3 text-[14.5px] font-semibold whitespace-nowrap text-white active:scale-[0.99]"
           >
-            {existing ? 'Update' : 'Place Order'}
-            <ArrowRight size={18} />
+            {existing ? 'Update' : lockedOrder ? 'Send top-up' : 'Place Order'}
+            <ArrowRight size={17} />
           </button>
         </div>
       </div>
@@ -500,16 +522,16 @@ function ModeCard({ active, icon: Icon, title, sub, onClick }: {
   return (
     <button
       onClick={onClick}
-      className={cn('flex items-center gap-2.5 rounded-2xl px-3 py-3.5 text-left transition-colors',
+      className={cn('flex items-center gap-2 rounded-2xl px-2.5 py-3 text-left transition-colors',
         active ? 'bg-brand-800' : 'border border-line bg-white')}
     >
-      <span className={cn('grid size-10 shrink-0 place-items-center rounded-full',
+      <span className={cn('grid size-9 shrink-0 place-items-center rounded-full',
         active ? 'bg-white/15 text-white' : 'bg-brand-800 text-white')}>
-        <Icon size={19} strokeWidth={2.4} />
+        <Icon size={17} strokeWidth={2.4} />
       </span>
       <span className="min-w-0">
-        <span className={cn('block truncate text-[15px] font-bold', active ? 'text-white' : 'text-ink')}>{title}</span>
-        <span className={cn('block truncate text-[12px]', active ? 'text-white/75' : 'text-muted')}>{sub}</span>
+        <span className={cn('block truncate text-[14px] font-bold', active ? 'text-white' : 'text-ink')}>{title}</span>
+        <span className={cn('block truncate text-[11.5px]', active ? 'text-white/75' : 'text-muted')}>{sub}</span>
       </span>
     </button>
   );

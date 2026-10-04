@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { Truck } from 'lucide-react';
 import { PageHeader, Card, CardBody } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Field';
+import { DateField } from '../../components/ui/DatePicker';
 import { StatTile } from '../../components/ui/Kpi';
 import { StatusBadge } from '../../components/ui/Badge';
 import { DataTable, type Column } from '../../components/ui/DataTable';
@@ -11,18 +12,19 @@ import { EmptyState } from '../../components/ui/States';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useCurrentUser, useDb } from '../../store/useStore';
-import { dispatchChallan } from '../../store/packingActions';
+import { dispatchAllReady, dispatchChallan } from '../../store/packingActions';
 import { deliveryRows, type DeliveryBoardRow } from '../../domain/packing';
-import { fmtDateTime } from '../../lib/format';
+import { fmtDate, fmtDateTime } from '../../lib/format';
 import { todayISO } from '../../lib/clock';
 
 export function DeliveryDashboardPage() {
   const db = useDb();
   const user = useCurrentUser()!;
   const nav = useNavigate();
+  const loc = useLocation();
   const confirm = useConfirm();
   const toast = useToast();
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(() => new URLSearchParams(loc.search).get('date') ?? todayISO());
   const [routeId, setRouteId] = useState('');
 
   const allRows = useMemo(() => deliveryRows(db, date), [db, date]);
@@ -39,13 +41,25 @@ export function DeliveryDashboardPage() {
     if (ok) { dispatchChallan(r.challan.id, user.id); toast({ tone: 'success', title: 'Dispatched', description: r.challan.challanNo }); }
   };
 
+  const readyRows = rows.filter((r) => r.challan.status === 'Ready');
+  const dispatchAll = async () => {
+    const ok = await confirm({
+      title: `Dispatch ${readyRows.length} challans?`,
+      description: routeId ? `${db.routes.find((r) => r.id === routeId)?.name} · every packed order on this route leaves now.` : 'Every packed order for this date leaves now; drivers see them in their app.',
+      confirmLabel: 'Dispatch all',
+    });
+    if (!ok) return;
+    const n = dispatchAllReady(date, user.id, routeId || undefined);
+    toast({ tone: 'success', title: `${n} challans dispatched` });
+  };
+
   const columns: Column<DeliveryBoardRow>[] = [
     { key: 'route', header: 'Route', render: (r) => r.route?.name ?? '—', sortValue: (r) => r.customer?.routeOrder ?? 0 },
     { key: 'customer', header: 'Customer', render: (r) => r.customer?.name ?? '—' },
-    { key: 'order', header: 'Order', render: (r) => r.order?.orderNo ?? '—', hideBelow: 'lg' },
+    { key: 'order', header: 'Order', nowrap: true, render: (r) => r.order?.orderNo ?? '—', hideBelow: 'lg' },
     { key: 'packages', header: 'Packages', align: 'right', render: (r) => r.challan.packages },
     { key: 'driver', header: 'Driver', render: (r) => r.driverName, hideBelow: 'md' },
-    { key: 'dispatch', header: 'Dispatch Time', render: (r) => (r.challan.dispatchedAt ? fmtDateTime(r.challan.dispatchedAt) : '—'), hideBelow: 'lg' },
+    { key: 'dispatch', header: 'Dispatch Time', nowrap: true, render: (r) => (r.challan.dispatchedAt ? fmtDateTime(r.challan.dispatchedAt) : '—'), hideBelow: 'lg' },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.challan.status} /> },
     {
       key: 'actions', header: '', align: 'right',
@@ -60,7 +74,11 @@ export function DeliveryDashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Delivery" description={`${allRows.length} challans for ${date}`} />
+      <PageHeader
+        title="Delivery"
+        description={`Delivery ${fmtDate(date)} · ${allRows.length} challans`}
+        actions={readyRows.length > 0 && <Button variant="primary" icon={Truck} onClick={dispatchAll}>Dispatch all ready ({readyRows.length})</Button>}
+      />
       <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <StatTile label="Ready" value={counts.ready} tone="neutral" />
         <StatTile label="Dispatched" value={counts.dispatched} tone="blue" />
@@ -69,11 +87,11 @@ export function DeliveryDashboardPage() {
       </div>
       <Card className="mb-4">
         <CardBody className="flex flex-wrap items-end gap-3">
+          <DateField label="Delivery date" value={date} onChange={setDate} />
           <div>
-            <label className="mb-1 block text-[11.5px] font-medium text-muted">Delivery date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 rounded-lg border border-line px-3 text-[13px]" />
+            <label className="mb-1 block text-[11.5px] font-medium text-muted">Route</label>
+            <Select value={routeId} onChange={(e) => setRouteId(e.target.value)} placeholder="All routes" className="w-48" options={db.routes.map((r) => ({ value: r.id, label: r.name }))} />
           </div>
-          <Select value={routeId} onChange={(e) => setRouteId(e.target.value)} placeholder="All routes" className="w-48" options={db.routes.map((r) => ({ value: r.id, label: r.name }))} />
         </CardBody>
       </Card>
       <Card>

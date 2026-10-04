@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Outlet } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Outlet, useLocation } from 'react-router';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { MobileBottomNav } from './MobileBottomNav';
@@ -8,6 +8,8 @@ import { useCurrentUser } from '../../store/useStore';
 export function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const user = useCurrentUser();
+  const loc = useLocation();
+  useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
 
   return (
     <div className="flex min-h-screen bg-canvas">

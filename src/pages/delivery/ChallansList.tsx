@@ -32,13 +32,13 @@ export function ChallansListPage() {
   }, [db.challans, search, status, customerId]);
 
   const columns: Column<Challan>[] = [
-    { key: 'no', header: 'Challan No', render: (c) => <span className="font-medium text-brand-700">{c.challanNo}</span>, sortValue: (c) => c.challanNo, exportValue: (c) => c.challanNo },
+    { key: 'no', header: 'Challan No', nowrap: true, render: (c) => <span className="font-medium text-brand-700">{c.challanNo}</span>, sortValue: (c) => c.challanNo, exportValue: (c) => c.challanNo },
     { key: 'customer', header: 'Customer', render: (c) => custById.get(c.customerId)?.name ?? '—', sortValue: (c) => custById.get(c.customerId)?.name ?? '' },
-    { key: 'date', header: 'Date', render: (c) => fmtDate(c.challanDate), sortValue: (c) => c.challanDate },
+    { key: 'date', header: 'Date', nowrap: true, render: (c) => fmtDate(c.challanDate), sortValue: (c) => c.challanDate, exportValue: (c) => c.challanDate },
     { key: 'driver', header: 'Driver', render: (c) => db.users.find((u) => u.id === c.driverId)?.name ?? '—', hideBelow: 'md' },
     { key: 'packages', header: 'Packages', align: 'right', render: (c) => c.packages, hideBelow: 'lg' },
-    { key: 'dispatched', header: 'Dispatched', render: (c) => fmtDateTime(c.dispatchedAt), hideBelow: 'lg' },
-    { key: 'delivered', header: 'Delivered', render: (c) => fmtDateTime(c.deliveredAt), hideBelow: 'lg' },
+    { key: 'dispatched', header: 'Dispatched', nowrap: true, render: (c) => fmtDateTime(c.dispatchedAt), hideBelow: 'lg' },
+    { key: 'delivered', header: 'Delivered', nowrap: true, render: (c) => fmtDateTime(c.deliveredAt), hideBelow: 'lg' },
     { key: 'status', header: 'Status', render: (c) => <StatusBadge status={c.status} /> },
   ];
 
